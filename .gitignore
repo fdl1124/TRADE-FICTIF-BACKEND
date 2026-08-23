@@ -1,8 +1,11 @@
 node_modules/
 dist/
+.next/
 .env
+.env*
 secrets/
 local.db
 local.db-*
 *.log
 coverage/
+frontend/README.md

@@ -1,0 +1,3 @@
+export const formatMoney=(value:number)=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",minimumFractionDigits:2,maximumFractionDigits:2}).format(value)
+export function Money({value,signed=false}:{value:number;signed?:boolean}){const prefix=signed?(value>=0?"+":"−"):value<0?"−":"";return <span className="mono">{prefix}{formatMoney(Math.abs(value))}</span>}
+export function Percent({value,signed=false}:{value:number;signed?:boolean}){const prefix=signed?(value>=0?"+":"−"):value<0?"−":"";return <span className="mono">{prefix}{Math.abs(value).toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2})} %</span>}

@@ -1,0 +1,11 @@
+import { z } from "zod"
+
+export const assetSchema = z.object({ symbol:z.string(), name:z.string(), type:z.enum(["stock","crypto"]), exchange:z.string() })
+export const priceSchema = z.object({ symbol:z.string(), price:z.number(), timestamp:z.string(), change24h:z.number() })
+export const positionSchema = z.object({ id:z.string(), accountId:z.string(), symbol:z.string(), quantity:z.number(), avgEntryPrice:z.number(), currentPrice:z.number(), unrealizedPnl:z.number(), unrealizedPnlPercent:z.number(), stopLoss:z.number().nullable(), takeProfit:z.number().nullable(), leverage:z.number(), openedAt:z.string() })
+export const orderSchema = z.object({ id:z.string(), accountId:z.string(), symbol:z.string(), type:z.enum(["market","limit"]), side:z.enum(["buy","sell"]), quantity:z.number(), limitPrice:z.number().nullable(), requestedPrice:z.number(), filledPrice:z.number().nullable(), slippage:z.number().nullable(), status:z.enum(["pending","filled","rejected","cancelled"]), source:z.enum(["manual","ai_agent"]), stopLoss:z.number().nullable(), takeProfit:z.number().nullable(), rejectionReason:z.string().nullable(), createdAt:z.string(), filledAt:z.string().nullable() })
+export const decisionSchema = z.object({ id:z.string(), accountId:z.string(), symbol:z.string(), action:z.enum(["BUY","SELL","HOLD"]), confidenceScore:z.number(), proposedQuantity:z.number().nullable(), proposedStopLoss:z.number().nullable(), proposedTakeProfit:z.number().nullable(), fullReasoning:z.string(), reasoningSummary:z.string(), keyFactors:z.array(z.string()), validationPassed:z.boolean(), validationErrors:z.array(z.string()), resultingOrderId:z.string().nullable(), modelUsed:z.enum(["gemini-3.7-flash","gemini-3.6-flash"]), thinkingLevel:z.enum(["low","medium","high"]), createdAt:z.string() })
+export type Asset=z.infer<typeof assetSchema>; export type PriceTick=z.infer<typeof priceSchema>; export type Position=z.infer<typeof positionSchema>; export type Order=z.infer<typeof orderSchema>; export type AiDecision=z.infer<typeof decisionSchema>
+export type View="dashboard"|"market"|"positions"|"orders"|"performance"|"agent"|"settings"
+export const money=(n:number)=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:2}).format(n)
+export const signed=(n:number)=>`${n>=0?"+":"−"}${money(Math.abs(n))}`

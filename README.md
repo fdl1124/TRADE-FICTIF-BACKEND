@@ -10,7 +10,7 @@ Backend NestJS du simulateur de trading (actions US + crypto, argent fictif). AP
 - Turso / libSQL via `@libsql/client` (requêtes 100% paramétrées)
 - Firebase Admin SDK (validation des ID tokens du frontend)
 - Gemini via l'**Interactions API** REST (`POST https://generativelanguage.googleapis.com/v1beta/interactions`)
-- WebSocket `@nestjs/websockets` (socket.io) pour la poussée de prix
+- WebSocket natif (`ws`, protocole brut conforme au contrat) pour la poussée de prix
 - Binance WebSocket public (crypto), Yahoo Finance (actions US — API `v8/finance/chart`, **sans clé**)
 - class-validator / class-transformer sur toutes les entrées
 
@@ -125,7 +125,7 @@ Par actif, bande de slippage selon liquidité simulée : crypto majeure 0.05–0
 
 ## WebSocket
 
-`WS /ws/prices` (socket.io, path `/ws/prices`, public). Client : `emit('subscribe', { action: 'subscribe', symbols: ['AAPL','BTCUSDT'] })` ; serveur : event **`price`** avec un `PriceTick` par symbole, throttle 1s par symbole. `emit('unsubscribe', {...})` pour se désabonner.
+`WS /ws/prices` (WebSocket natif, protocole texte JSON, public — compatible `new WebSocket()` côté navigateur). Client : envoyer `{"action":"subscribe","symbols":["AAPL","BTCUSDT"]}` ; serveur : pousse un `PriceTick` (JSON) par symbole, throttle 1s par symbole. `{"action":"unsubscribe",...}` pour se désabonner.
 
 ## Sécurité
 
