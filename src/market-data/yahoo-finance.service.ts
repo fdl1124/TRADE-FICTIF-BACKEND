@@ -1,4 +1,5 @@
-import { Injectable, Interval } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { Interval } from '@nestjs/schedule';
 import { Client } from '@libsql/client';
 import { Inject } from '@nestjs/common';
 import { PriceCacheService } from './price-cache.service';
@@ -73,7 +74,8 @@ export class YahooFinanceService {
         return null;
       }
       const price = meta.regularMarketPrice as number;
-      const previousClose = Number.isFinite(meta.chartPreviousClose) ? meta.chartPreviousClose : price;
+      const rawClose = meta.chartPreviousClose;
+      const previousClose = typeof rawClose === 'number' && Number.isFinite(rawClose) && rawClose > 0 ? rawClose : price;
       const change24h = previousClose > 0 ? ((price - previousClose) / previousClose) * 100 : 0;
       const marketTime = Number.isFinite(meta.regularMarketTime)
         ? (meta.regularMarketTime as number) * 1000

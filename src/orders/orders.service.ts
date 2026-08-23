@@ -1,4 +1,5 @@
-import { Injectable, Interval, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { Interval } from '@nestjs/schedule';
 import { Client } from '@libsql/client';
 import { Inject } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';

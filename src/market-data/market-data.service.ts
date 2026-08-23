@@ -1,4 +1,5 @@
-import { Injectable, Interval } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { Interval } from '@nestjs/schedule';
 import { Client } from '@libsql/client';
 import { Inject } from '@nestjs/common';
 import { PriceCacheService, PRICE_FRESHNESS_MS } from './price-cache.service';
