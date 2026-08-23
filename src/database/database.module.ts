@@ -1,9 +1,8 @@
 import { Global, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, Client } from '@libsql/client';
+import { LIBSQL_CLIENT } from './libsql-token';
 import { DatabaseService } from './database.service';
-
-export const LIBSQL_CLIENT = 'LIBSQL_CLIENT';
 
 @Global()
 @Module({

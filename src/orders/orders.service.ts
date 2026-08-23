@@ -3,7 +3,7 @@ import { Interval } from '@nestjs/schedule';
 import { Client } from '@libsql/client';
 import { Inject } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { LIBSQL_CLIENT } from '../database/database.module';
+import { LIBSQL_CLIENT } from '../database/libsql-token';
 import { MarketStatusService } from '../market-data/market-status.service';
 import { MarketDataService } from '../market-data/market-data.service';
 import { PriceCacheService } from '../market-data/price-cache.service';

@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Client } from '@libsql/client';
 import { Inject } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { LIBSQL_CLIENT } from '../database/database.module';
+import { LIBSQL_CLIENT } from '../database/libsql-token';
 import { PriceCacheService } from '../market-data/price-cache.service';
 import { Account, AccountSummary } from '../common/interfaces';
 import { FirebaseUserPayload } from '../auth/firebase.service';

@@ -5,7 +5,7 @@ import { Inject } from '@nestjs/common';
 import { PriceCacheService } from './price-cache.service';
 import { STOCK_SYMBOLS } from '../common/constants/assets';
 import { PriceTick } from '../common/interfaces';
-import { LIBSQL_CLIENT } from '../database/database.module';
+import { LIBSQL_CLIENT } from '../database/libsql-token';
 
 const YAHOO_BASE = 'https://query1.finance.yahoo.com/v8/finance/chart';
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)';

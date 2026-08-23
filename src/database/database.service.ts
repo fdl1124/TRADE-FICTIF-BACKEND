@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Client } from '@libsql/client';
 import { Inject } from '@nestjs/common';
-import { LIBSQL_CLIENT } from './database.module';
+import { LIBSQL_CLIENT } from './libsql-token';
 
 @Injectable()
 export class DatabaseService implements OnModuleInit {

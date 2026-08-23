@@ -3,7 +3,7 @@ import { Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Client } from '@libsql/client';
 import { randomUUID } from 'node:crypto';
-import { LIBSQL_CLIENT } from '../database/database.module';
+import { LIBSQL_CLIENT } from '../database/libsql-token';
 import { AccountService } from '../portfolio/account.service';
 import { OrdersService } from '../orders/orders.service';
 import { AiAgentConfig, AiDecision, ApiError } from '../common/interfaces';

@@ -7,7 +7,7 @@ import { BinanceService } from './binance.service';
 import { YahooFinanceService } from './yahoo-finance.service';
 import { findAsset } from '../common/constants/assets';
 import { PriceTick } from '../common/interfaces';
-import { LIBSQL_CLIENT } from '../database/database.module';
+import { LIBSQL_CLIENT } from '../database/libsql-token';
 
 type HistoryRange = '1d' | '1w' | '1m';
 

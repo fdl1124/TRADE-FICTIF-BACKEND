@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Client } from '@libsql/client';
 import { Inject } from '@nestjs/common';
-import { LIBSQL_CLIENT } from '../database/database.module';
+import { LIBSQL_CLIENT } from '../database/libsql-token';
 import { PriceCacheService } from '../market-data/price-cache.service';
 import { Position } from '../common/interfaces';
 import { ApiErrors } from '../common/api-error';
