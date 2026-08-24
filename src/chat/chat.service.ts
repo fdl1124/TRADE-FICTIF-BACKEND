@@ -258,7 +258,7 @@ Answer in the same language as the user (French if they write in French). Be con
 
         for await (const event of this.gemini.streamInteraction({
           systemInstruction,
-          input,
+          input: input as string | Array<{ type: 'text'; text: string } | { type: 'inline_data'; mime_type: string; data: string } | { type: 'function_result'; name: string; call_id: string; result: Array<{ type: string; text: string }> }>,
           thinkingLevel,
           tools: [...PLATFORM_TOOL_DECLARATIONS, { type: 'google_search' }, { type: 'url_context' }],
           previousInteractionId: loop === 0 ? undefined : interactionId,
