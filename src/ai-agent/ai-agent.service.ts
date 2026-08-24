@@ -253,6 +253,7 @@ export class AiAgentService implements OnModuleInit, OnModuleDestroy {
   }
 
   async updateConfig(accountId: string, dto: UpdateAiConfigDto): Promise<AiAgentConfig> {
+    await this.getConfig(accountId);
     const assignments: string[] = [];
     const values: (string | number | null)[] = [];
 
