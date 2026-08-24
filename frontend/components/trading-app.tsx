@@ -101,6 +101,25 @@ function exportToCsv(filename: string, rows: Record<string, unknown>[]) {
   a.click()
   URL.revokeObjectURL(url)
 }
+function formatRelative(iso: string) {
+  const diff = Date.now() - new Date(iso).getTime()
+  const sec = Math.round(diff / 1000)
+  if (sec < 60) return `il y a ${sec} s`
+  const min = Math.round(sec / 60)
+  if (min < 60) return `il y a ${min} min`
+  const hr = Math.round(min / 60)
+  if (hr < 24) return `il y a ${hr} h`
+  return `il y a ${Math.round(hr / 24)} j`
+}
+function RelativeTime({ iso }: { iso: string }) {
+  const value = formatRelative(iso)
+  const [, forceTick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => forceTick((n) => n + 1), 60000)
+    return () => clearInterval(id)
+  }, [])
+  return <>{value}</>
+}
 function useRelativeTime(iso: string) {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -625,7 +644,7 @@ function Shell({ children }: { children: React.ReactNode }) {
             >
               <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                 <strong style={{ fontSize: 13 }}>{n.title}</strong>
-                <span style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>{useRelativeTime(n.createdAt)}</span>
+                <span style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}><RelativeTime iso={n.createdAt} /></span>
               </div>
               <p style={{ margin: "6px 0 0", color: "var(--muted)", fontSize: 12, lineHeight: 1.4 }}>{n.body}</p>
             </div>
@@ -1553,7 +1572,7 @@ function Orders() {
                 <strong>
                   {o.side === "buy" ? "ACHAT" : "VENTE"} {o.symbol}
                 </strong>
-                <span>{o.quantity} unités • {useRelativeTime(o.createdAt)}</span>
+                <span>{o.quantity} unités • <RelativeTime iso={o.createdAt} /></span>
               </div>
               <span>{o.type === "market" ? "Marché" : `Limite ${o.limitPrice ? money(o.limitPrice) : ""}`}</span>
               <div className="mono">
@@ -2282,7 +2301,7 @@ function ChatView() {
                   }}
                 >
                   <strong style={{ display: "block", fontSize: 13 }}>{c.title}</strong>
-                  <span style={{ fontSize: 11, color: "var(--muted)" }}>{useRelativeTime(c.updatedAt)}</span>
+                  <span style={{ fontSize: 11, color: "var(--muted)" }}><RelativeTime iso={c.updatedAt} /></span>
                 </button>
                 <button onClick={() => handleDelete(c.id)} aria-label="Supprimer" style={{ border: 0, background: "transparent", color: "var(--muted)" }}>
                   <Trash2 size={14} />
