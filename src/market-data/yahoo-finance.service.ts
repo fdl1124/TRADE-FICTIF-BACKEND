@@ -4,7 +4,7 @@ import { Client } from '@libsql/client';
 import { Inject } from '@nestjs/common';
 import { PriceCacheService } from './price-cache.service';
 import { STOCK_SYMBOLS } from '../common/constants/assets';
-import { PriceTick } from '../common/interfaces';
+import { Candle, PriceTick } from '../common/interfaces';
 import { LIBSQL_CLIENT } from '../database/libsql-token';
 
 const YAHOO_BASE = 'https://query1.finance.yahoo.com/v8/finance/chart';
@@ -19,11 +19,18 @@ interface YahooChartResponse {
         regularMarketPrice?: number;
         chartPreviousClose?: number;
         regularMarketTime?: number;
+        regularMarketVolume?: number;
+        regularMarketDayHigh?: number;
+        regularMarketDayLow?: number;
       };
       timestamp?: number[];
       indicators?: {
         quote?: Array<{
+          open?: Array<number | null>;
+          high?: Array<number | null>;
+          low?: Array<number | null>;
           close?: Array<number | null>;
+          volume?: Array<number | null>;
         }>;
       };
     }>;
@@ -80,7 +87,11 @@ export class YahooFinanceService {
       const marketTime = Number.isFinite(meta.regularMarketTime)
         ? (meta.regularMarketTime as number) * 1000
         : Date.now();
-      this.cache.setTick(symbol, price, change24h, marketTime);
+      this.cache.setTick(symbol, price, change24h, marketTime, {
+        volume24h: typeof meta.regularMarketVolume === 'number' ? meta.regularMarketVolume : undefined,
+        high24h: typeof meta.regularMarketDayHigh === 'number' ? meta.regularMarketDayHigh : undefined,
+        low24h: typeof meta.regularMarketDayLow === 'number' ? meta.regularMarketDayLow : undefined,
+      });
       return this.cache.get(symbol);
     } catch {
       return null;
@@ -88,6 +99,19 @@ export class YahooFinanceService {
   }
 
   async fetchCandles(symbol: string, resolution: string, from: number, to: number): Promise<PriceTick[] | null> {
+    const ohlc = await this.fetchOHLC(symbol, resolution, from, to);
+    if (!ohlc) {
+      return null;
+    }
+    return ohlc.map((candle) => ({
+      symbol,
+      price: candle.close,
+      timestamp: candle.time,
+      change24h: 0,
+    }));
+  }
+
+  async fetchOHLC(symbol: string, resolution: string, from: number, to: number): Promise<Candle[] | null> {
     const interval = RESOLUTION_TO_INTERVAL[resolution] ?? '1h';
     const range = rangeFromWindow(from, to);
     try {
@@ -103,27 +127,31 @@ export class YahooFinanceService {
         return null;
       }
       const timestamps = result.timestamp ?? [];
-      const closes = result.indicators?.quote?.[0]?.close ?? [];
-      const ticks: PriceTick[] = [];
+      const quote = result.indicators?.quote?.[0] ?? {};
+      const opens = quote.open ?? [];
+      const highs = quote.high ?? [];
+      const lows = quote.low ?? [];
+      const closes = quote.close ?? [];
+      const volumes = quote.volume ?? [];
+      const candles: Candle[] = [];
       for (let i = 0; i < timestamps.length; i++) {
         const close = closes[i];
         if (!Number.isFinite(close) || (close ?? 0) <= 0) {
           continue;
         }
-        ticks.push({
-          symbol,
-          price: close as number,
-          timestamp: new Date(timestamps[i] * 1000).toISOString(),
-          change24h: 0,
+        const open = Number.isFinite(opens[i]) ? (opens[i] as number) : (close as number);
+        const high = Number.isFinite(highs[i]) ? (highs[i] as number) : (close as number);
+        const low = Number.isFinite(lows[i]) ? (lows[i] as number) : (close as number);
+        candles.push({
+          time: new Date(timestamps[i] * 1000).toISOString(),
+          open,
+          high,
+          low,
+          close,
+          volume: Number.isFinite(volumes[i]) ? (volumes[i] as number) : null,
         });
       }
-      if (ticks.length > 1) {
-        const first = ticks[0].price;
-        for (const tick of ticks) {
-          tick.change24h = ((tick.price - first) / first) * 100;
-        }
-      }
-      return ticks;
+      return candles;
     } catch {
       return null;
     }

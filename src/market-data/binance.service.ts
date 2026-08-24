@@ -1,7 +1,7 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PriceCacheService } from './price-cache.service';
 import { CRYPTO_SYMBOLS } from '../common/constants/assets';
-import { PriceTick } from '../common/interfaces';
+import { Candle, PriceTick } from '../common/interfaces';
 
 interface BinanceCombinedMessage {
   stream?: string;
@@ -10,12 +10,15 @@ interface BinanceCombinedMessage {
     c?: string;
     P?: string;
     E?: number;
+    v?: string;
+    q?: string;
+    h?: string;
+    l?: string;
   };
 }
 
 @Injectable()
 export class BinanceService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(BinanceService.name);
   private ws: WebSocket | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private destroyed = false;
@@ -47,11 +50,19 @@ export class BinanceService implements OnModuleInit, OnModuleDestroy {
         const parsed = JSON.parse(String(event.data)) as BinanceCombinedMessage;
         const d = parsed.data;
         if (d && typeof d.s === 'string' && typeof d.c === 'string') {
+          const volume = Number.parseFloat(d.q ?? '');
+          const high = Number.parseFloat(d.h ?? '');
+          const low = Number.parseFloat(d.l ?? '');
           this.cache.setTick(
             d.s,
             Number.parseFloat(d.c),
             Number.parseFloat(d.P ?? '0'),
             typeof d.E === 'number' ? d.E : Date.now(),
+            {
+              volume24h: Number.isFinite(volume) ? volume : undefined,
+              high24h: Number.isFinite(high) ? high : undefined,
+              low24h: Number.isFinite(low) ? low : undefined,
+            },
           );
         }
       } catch {
@@ -61,7 +72,6 @@ export class BinanceService implements OnModuleInit, OnModuleDestroy {
 
     ws.onclose = () => {
       if (!this.destroyed) {
-        this.logger.warn('Binance WebSocket closed, reconnecting in 5s');
         this.scheduleReconnect();
       }
     };
@@ -90,16 +100,31 @@ export class BinanceService implements OnModuleInit, OnModuleDestroy {
       if (!response.ok) {
         return null;
       }
-      const data = (await response.json()) as { lastPrice?: string; priceChangePercent?: string; closeTime?: number };
+      const data = (await response.json()) as {
+        lastPrice?: string;
+        priceChangePercent?: string;
+        closeTime?: number;
+        quoteVolume?: string;
+        highPrice?: string;
+        lowPrice?: string;
+      };
       const price = Number.parseFloat(data.lastPrice ?? '');
       if (!Number.isFinite(price) || price <= 0) {
         return null;
       }
+      const volume = Number.parseFloat(data.quoteVolume ?? '');
+      const high = Number.parseFloat(data.highPrice ?? '');
+      const low = Number.parseFloat(data.lowPrice ?? '');
       this.cache.setTick(
         symbol,
         price,
         Number.parseFloat(data.priceChangePercent ?? '0'),
         typeof data.closeTime === 'number' ? data.closeTime : Date.now(),
+        {
+          volume24h: Number.isFinite(volume) ? volume : undefined,
+          high24h: Number.isFinite(high) ? high : undefined,
+          low24h: Number.isFinite(low) ? low : undefined,
+        },
       );
       return this.cache.get(symbol);
     } catch {
@@ -108,6 +133,16 @@ export class BinanceService implements OnModuleInit, OnModuleDestroy {
   }
 
   async fetchKlines(symbol: string, interval: string, limit: number): Promise<PriceTick[]> {
+    const candles = await this.fetchCandles(symbol, interval, limit);
+    return candles.map((candle) => ({
+      symbol,
+      price: candle.close,
+      timestamp: candle.time,
+      change24h: 0,
+    }));
+  }
+
+  async fetchCandles(symbol: string, interval: string, limit: number): Promise<Candle[]> {
     try {
       const response = await fetch(
         `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`,
@@ -116,30 +151,30 @@ export class BinanceService implements OnModuleInit, OnModuleDestroy {
         return [];
       }
       const rows = (await response.json()) as unknown[];
-      const ticks: PriceTick[] = [];
+      const candles: Candle[] = [];
       for (const row of rows) {
-        if (!Array.isArray(row) || row.length < 6) {
+        if (!Array.isArray(row) || row.length < 7) {
           continue;
         }
-        const closeTime = Number(row[6]);
+        const openTime = Number(row[0]);
+        const open = Number.parseFloat(String(row[1]));
+        const high = Number.parseFloat(String(row[2]));
+        const low = Number.parseFloat(String(row[3]));
         const close = Number.parseFloat(String(row[4]));
-        if (!Number.isFinite(close) || close <= 0) {
+        const volume = Number.parseFloat(String(row[5]));
+        if (![open, high, low, close].every(Number.isFinite) || close <= 0) {
           continue;
         }
-        ticks.push({
-          symbol,
-          price: close,
-          timestamp: new Date(Number.isFinite(closeTime) ? closeTime : Date.now()).toISOString(),
-          change24h: 0,
+        candles.push({
+          time: new Date(Number.isFinite(openTime) ? openTime : Date.now()).toISOString(),
+          open,
+          high,
+          low,
+          close,
+          volume: Number.isFinite(volume) ? volume : null,
         });
       }
-      if (ticks.length > 1) {
-        const first = ticks[0].price;
-        for (const tick of ticks) {
-          tick.change24h = ((tick.price - first) / first) * 100;
-        }
-      }
-      return ticks;
+      return candles;
     } catch {
       return [];
     }

@@ -17,6 +17,8 @@ export const ApiErrors = {
   forbidden: () =>
     new ApiErrorCodeException(403, 'FORBIDDEN', 'Resource does not belong to the authenticated user'),
   notFound: (what: string) => new ApiErrorCodeException(404, 'NOT_FOUND', `${what} not found`),
+  validation: (details: unknown) =>
+    new ApiErrorCodeException(400, 'VALIDATION_ERROR', 'Request validation failed', details),
   invalidSymbol: (symbol: string) =>
     new ApiErrorCodeException(400, 'INVALID_SYMBOL', `Symbol ${symbol} is not a tradable asset`),
   marketClosed: (symbol: string) =>

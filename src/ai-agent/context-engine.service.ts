@@ -157,6 +157,36 @@ export class ContextEngineService {
     };
   }
 
+  async buildMarketSnapshot(symbol: string): Promise<AgentMarketContext | null> {
+    const asset = findAsset(symbol);
+    if (!asset) {
+      return null;
+    }
+    const tick = await this.marketData.getFreshTick(asset.symbol);
+    if (!tick) {
+      return null;
+    }
+    const closes = await this.loadCloses(asset.type, asset.symbol, tick.price);
+    return {
+      symbol: asset.symbol,
+      assetType: asset.type,
+      exchange: asset.exchange,
+      marketOpen: this.marketStatus.isMarketOpen(asset),
+      spotPrice: tick.price,
+      priceTimestamp: tick.timestamp,
+      change24hPct: tick.change24h,
+      rsi14: computeRsi(closes),
+      sma20: computeSma(closes, 20),
+      sma50: computeSma(closes, 50),
+      volatilityPct: computeVolatilityPct(closes),
+      recentCloses: closes.slice(-30),
+      currentPositionQuantity: 0,
+      cashBalance: 0,
+      startingBalance: 0,
+      totalEquity: 0,
+    };
+  }
+
   resolveThinkingLevel(context: AgentMarketContext): ThinkingLevel {
     const volatile =
       Math.abs(context.change24hPct) >= HIGH_VOLATILITY_CHANGE_24H ||

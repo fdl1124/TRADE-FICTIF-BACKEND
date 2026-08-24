@@ -1,10 +1,11 @@
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
 import { FirebaseAuthGuard } from '../auth/firebase-auth.guard';
 import { CurrentUser } from '../auth/firebase-auth.decorator';
 import { FirebaseUserPayload } from '../auth/firebase.service';
 import { AccountService } from './account.service';
 import { PositionsService } from './positions.service';
 import { Position } from '../common/interfaces';
+import { PatchPositionDto } from '../common/dto/patch-position.dto';
 
 @Controller('api/positions')
 @UseGuards(FirebaseAuthGuard)
@@ -27,5 +28,15 @@ export class PositionsController {
   ): Promise<Position> {
     const accountId = await this.accounts.getOrCreateAccountId(user);
     return this.positions.getOne(accountId, positionId);
+  }
+
+  @Patch(':id')
+  async patchRisk(
+    @CurrentUser() user: FirebaseUserPayload,
+    @Param('id') positionId: string,
+    @Body() dto: PatchPositionDto,
+  ): Promise<Position> {
+    const accountId = await this.accounts.getOrCreateAccountId(user);
+    return this.positions.patchRisk(accountId, positionId, dto.stopLoss ?? null, dto.takeProfit ?? null);
   }
 }

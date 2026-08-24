@@ -10,6 +10,23 @@ const PRIMARY_TIMEOUT_MS = 2_000;
 const FALLBACK_TIMEOUT_MS = 8_000;
 const MAX_KEYS = 10;
 const KEY_FAILURE_STATUSES: ReadonlySet<number> = new Set([401, 403, 429]);
+const STREAM_IDLE_TIMEOUT_MS = 90_000;
+
+interface StreamWireEvent {
+  event_type?: string;
+  status?: string;
+  index?: number;
+  step?: { type?: string; name?: string; id?: string };
+  delta?: {
+    type?: string;
+    text?: string;
+    arguments_json?: string;
+    json?: string;
+  };
+  interaction?: { id?: string };
+  interaction_id?: string;
+  error?: { message?: string; code?: string };
+}
 
 export type GeminiModelName = typeof GEMINI_PRIMARY_MODEL | typeof GEMINI_FALLBACK_MODEL;
 
@@ -17,7 +34,25 @@ export interface GeminiDecisionRequest {
   systemInstruction: string;
   userPrompt: string;
   thinkingLevel: ThinkingLevel;
+  tools?: unknown[];
 }
+
+export interface GeminiStreamRequest {
+  systemInstruction: string;
+  input: string | Array<{ type: string; text?: string; inline_data?: { mime_type: string; data: string } }>;
+  thinkingLevel: ThinkingLevel;
+  tools?: unknown[];
+  previousInteractionId?: string;
+}
+
+export type GeminiStreamEvent =
+  | { kind: 'step_started'; stepType: string; name?: string }
+  | { kind: 'text_delta'; text: string }
+  | { kind: 'thought_delta'; text: string }
+  | { kind: 'function_call'; callId: string; name: string; argumentsJson: string }
+  | { kind: 'requires_action' }
+  | { kind: 'completed'; interactionId: string }
+  | { kind: 'failed'; message: string };
 
 export interface GeminiDecisionResult {
   ok: boolean;
@@ -218,6 +253,7 @@ export class GeminiService {
             thinking_summaries: 'auto',
           },
           store: false,
+          ...(request.tools && request.tools.length > 0 ? { tools: request.tools } : {}),
         }),
         signal: controller.signal,
       });
@@ -233,6 +269,163 @@ export class GeminiService {
       throw error;
     } finally {
       clearTimeout(timer);
+    }
+  }
+
+  async *streamInteraction(request: GeminiStreamRequest): AsyncGenerator<GeminiStreamEvent> {
+    const attempts = [GEMINI_PRIMARY_MODEL];
+    for (let attemptIndex = 0; attemptIndex < attempts.length; attemptIndex++) {
+      const model = attempts[attemptIndex];
+      let retried = false;
+      let attempt = 0;
+      while (attempt <= this.ring.size && !retried) {
+        const keyIndex = this.ring.currentIndexValue();
+        const apiKey = this.ring.currentKey();
+        if (apiKey === null) {
+          yield { kind: 'failed', message: 'no Gemini API key configured' };
+          return;
+        }
+        const controller = new AbortController();
+        let timer: ReturnType<typeof setTimeout> | null = setTimeout(() => controller.abort(), STREAM_IDLE_TIMEOUT_MS);
+        const rearmTimer = () => {
+          if (timer) clearTimeout(timer);
+          timer = setTimeout(() => controller.abort(), STREAM_IDLE_TIMEOUT_MS);
+        };
+        try {
+          const response = await fetch(GEMINI_INTERACTIONS_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': apiKey,
+            },
+            body: JSON.stringify({
+              model,
+              input: request.input,
+              system_instruction: request.systemInstruction,
+              generation_config: {
+                thinking_level: request.thinkingLevel,
+                thinking_summaries: 'auto',
+              },
+              store: false,
+              stream: true,
+              ...(request.previousInteractionId
+                ? { previous_interaction_id: request.previousInteractionId }
+                : {}),
+              ...(request.tools && request.tools.length > 0 ? { tools: request.tools } : {}),
+            }),
+            signal: controller.signal,
+          });
+          if (!response.ok || !response.body) {
+            throw new GeminiHttpError(response.status);
+          }
+          const decoder = new TextDecoder();
+          let buffer = '';
+          let sawRequiresAction = false;
+          let currentStep: { index: number; type: string; name?: string; callId?: string } | null = null;
+          let argumentBuffer = '';
+          for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+            rearmTimer();
+            buffer += decoder.decode(chunk, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() ?? '';
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed.startsWith('data:')) {
+                continue;
+              }
+              const payload = trimmed.slice(5).trim();
+              if (!payload || payload === '[DONE]') {
+                continue;
+              }
+              let event: StreamWireEvent;
+              try {
+                event = JSON.parse(payload) as StreamWireEvent;
+              } catch {
+                continue;
+              }
+              const eventType = event.event_type ?? '';
+              if (eventType === 'step.start') {
+                currentStep = {
+                  index: Number(event.index ?? 0),
+                  type: String(event.step?.type ?? ''),
+                  name: typeof event.step?.name === 'string' ? event.step.name : undefined,
+                  callId: typeof event.step?.id === 'string' ? event.step.id : undefined,
+                };
+                argumentBuffer = '';
+                yield { kind: 'step_started', stepType: currentStep.type, name: currentStep.name };
+              } else if (eventType === 'step.delta' && event.delta) {
+                const delta = event.delta;
+                if (delta.type === 'text' && typeof delta.text === 'string') {
+                  yield { kind: 'text_delta', text: delta.text };
+                } else if (delta.type === 'thought_summary' && typeof delta.text === 'string') {
+                  yield { kind: 'thought_delta', text: delta.text };
+                } else if (delta.type === 'arguments_delta') {
+                  const fragment =
+                    typeof delta.arguments_json === 'string'
+                      ? delta.arguments_json
+                      : typeof delta.json === 'string'
+                        ? delta.json
+                        : '';
+                  argumentBuffer += fragment;
+                }
+              } else if (eventType === 'step.stop' && currentStep?.type === 'function_call') {
+                yield {
+                  kind: 'function_call',
+                  callId: currentStep.callId ?? String(currentStep.index),
+                  name: currentStep.name ?? '',
+                  argumentsJson: argumentBuffer || '{}',
+                };
+                currentStep = null;
+                argumentBuffer = '';
+              } else if (eventType === 'interaction.status_update' && event.status === 'requires_action') {
+                sawRequiresAction = true;
+                yield { kind: 'requires_action' };
+              } else if (eventType === 'interaction.completed') {
+                const interactionId =
+                  event.interaction && typeof event.interaction.id === 'string'
+                    ? event.interaction.id
+                    : typeof event.interaction_id === 'string'
+                      ? event.interaction_id
+                      : '';
+                yield { kind: 'completed', interactionId };
+                return;
+              } else if (eventType === 'error') {
+                const message =
+                  event.error && typeof event.error.message === 'string' ? event.error.message : 'stream error';
+                throw new Error(message);
+              }
+            }
+          }
+          if (!sawRequiresAction) {
+            yield { kind: 'completed', interactionId: '' };
+          }
+          return;
+        } catch (error) {
+          if (timer) clearTimeout(timer);
+          timer = null;
+          const message = error instanceof Error ? error.message : String(error);
+          if (
+            error instanceof GeminiHttpError &&
+            KEY_FAILURE_STATUSES.has(error.status) &&
+            this.ring.size > 1 &&
+            this.ring.rotateToNextAvailable()
+          ) {
+            this.ring.markFailed(keyIndex, keyFailureReason(error.status));
+            this.logger.warn(
+              `Gemini key #${keyIndex + 1} rejected during stream (HTTP ${error.status}), rotating to key #${this.ring.currentIndexValue() + 1}`,
+            );
+            continue;
+          }
+          if (attemptIndex < attempts.length - 1) {
+            this.logger.warn(`Streaming with ${model} failed: ${message}, trying next model`);
+            break;
+          }
+          yield { kind: 'failed', message };
+          return;
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
+      }
     }
   }
 

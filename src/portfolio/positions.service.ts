@@ -43,6 +43,31 @@ export class PositionsService {
     return Number(result.rows[0].quantity);
   }
 
+  async patchRisk(
+    accountId: string,
+    positionId: string,
+    stopLoss: number | null,
+    takeProfit: number | null,
+  ): Promise<Position> {
+    const existing = await this.db.execute({
+      sql: 'SELECT id FROM positions WHERE id = ? AND account_id = ?',
+      args: [positionId, accountId],
+    });
+    if (existing.rows.length === 0) {
+      throw ApiErrors.notFound('Position');
+    }
+    await this.db.execute({
+      sql: 'UPDATE positions SET stop_loss = ?, take_profit = ? WHERE id = ? AND account_id = ?',
+      args: [
+        stopLoss === undefined ? null : stopLoss,
+        takeProfit === undefined ? null : takeProfit,
+        positionId,
+        accountId,
+      ],
+    });
+    return this.getOne(accountId, positionId);
+  }
+
   private mapRow(row: Record<string, unknown>): Position {
     const avgEntryPrice = Number(row.avg_entry_price);
     const tick = this.cache.get(String(row.symbol));

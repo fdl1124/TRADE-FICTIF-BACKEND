@@ -6,7 +6,7 @@ import { PriceCacheService, PRICE_FRESHNESS_MS } from './price-cache.service';
 import { BinanceService } from './binance.service';
 import { YahooFinanceService } from './yahoo-finance.service';
 import { findAsset } from '../common/constants/assets';
-import { PriceTick } from '../common/interfaces';
+import { Candle, PriceTick } from '../common/interfaces';
 import { LIBSQL_CLIENT } from '../database/libsql-token';
 
 type HistoryRange = '1d' | '1w' | '1m';
@@ -79,6 +79,36 @@ export class MarketDataService {
       return candles;
     }
     return this.yahoo.readLocalHistory(symbol, Date.now() - RANGE_MS[range]);
+  }
+
+  async getCandles(symbol: string, range: HistoryRange): Promise<Candle[]> {
+    const asset = findAsset(symbol);
+    if (!asset) {
+      return [];
+    }
+    if (asset.type === 'crypto') {
+      const config = BINANCE_KLINES[range];
+      return this.binance.fetchCandles(symbol, config.interval, config.limit);
+    }
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const fromSeconds = Math.floor((Date.now() - RANGE_MS[range]) / 1000);
+    const ohlc = await this.yahoo.fetchOHLC(
+      symbol,
+      STOCK_CANDLE_RESOLUTION[range].resolution,
+      fromSeconds,
+      nowSeconds,
+    );
+    if (ohlc && ohlc.length > 1) {
+      return ohlc;
+    }
+    return (await this.yahoo.readLocalHistory(symbol, Date.now() - RANGE_MS[range])).map((tick) => ({
+      time: tick.timestamp,
+      open: tick.price,
+      high: tick.price,
+      low: tick.price,
+      close: tick.price,
+      volume: null,
+    }));
   }
 
   @Interval(60_000)

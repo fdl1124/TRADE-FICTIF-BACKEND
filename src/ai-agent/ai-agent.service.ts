@@ -6,28 +6,12 @@ import { randomUUID } from 'node:crypto';
 import { LIBSQL_CLIENT } from '../database/libsql-token';
 import { AccountService } from '../portfolio/account.service';
 import { OrdersService } from '../orders/orders.service';
-import { AiAgentConfig, AiDecision, ApiError } from '../common/interfaces';
+import { AiDecision, ApiError } from '../common/interfaces';
 import { CreateOrderDto } from '../common/dto/create-order.dto';
 import { UpdateAiConfigDto } from '../common/dto/update-ai-config.dto';
 import { ApiErrors } from '../common/api-error';
-import { ContextEngineService } from './context-engine.service';
-import { GeminiService } from './gemini.service';
-import { NormalizedDecision, RiskValidationService } from './risk-validation.service';
+import { AiAgentsService } from './ai-agents.service';
 
-const AGENT_SYSTEM_INSTRUCTION = `You are a prudent trading agent managing a simulated portfolio with fictional money.
-You receive a JSON market context for exactly one symbol: spot price, indicators (RSI14, SMA20, SMA50, volatility), current position and cash.
-Decide between BUY, SELL and HOLD for that symbol only.
-Rules:
-- The ticker field must be exactly the symbol from the context.
-- confidence_score is between 0.0 and 1.0.
-- proposed_quantity is expressed in units of the asset, only for BUY and SELL, null for HOLD.
-- proposed_stop_loss and proposed_take_profit are absolute prices, only meaningful for BUY, null otherwise. Stop loss must be below spot price and within 10% of it. Take profit must be above spot price.
-- Never propose a position costing more than 2% of total equity unless the context says otherwise.
-- SELL is only possible when currentPositionQuantity is greater than zero.
-- reasoning_summary is a single short sentence. key_factors is a list of short factor labels.
-Answer with a single JSON object matching the provided schema and nothing else.`;
-
-const MAX_SYMBOLS_PER_CYCLE = 5;
 const MIN_CYCLE_SECONDS = 5;
 
 function decisionToOrderDto(input: {
@@ -58,9 +42,7 @@ export class AiAgentService implements OnModuleInit, OnModuleDestroy {
     private readonly config: ConfigService,
     private readonly accounts: AccountService,
     private readonly orders: OrdersService,
-    private readonly contextEngine: ContextEngineService,
-    private readonly gemini: GeminiService,
-    private readonly riskValidation: RiskValidationService,
+    private readonly agents: AiAgentsService,
   ) {}
 
   onModuleInit(): void {
@@ -83,155 +65,9 @@ export class AiAgentService implements OnModuleInit, OnModuleDestroy {
   }
 
   async runCycleForAllAccounts(): Promise<number> {
-    const rows = await this.db.execute({
-      sql: 'SELECT account_id FROM ai_agent_configs WHERE enabled = 1 AND circuit_breaker_active = 0',
-      args: [],
-    });
-    let processed = 0;
-    for (const row of rows.rows) {
-      await this.runCycleForAccount(String(row.account_id));
-      processed += 1;
-    }
-    return processed;
+    return this.agents.runCycleForAllAgents();
   }
 
-  private async runCycleForAccount(accountId: string): Promise<void> {
-    const agentConfig = await this.getConfig(accountId);
-    if (!agentConfig.enabled || agentConfig.circuitBreakerActive) {
-      return;
-    }
-
-    const { startingBalance } = await this.accounts.getBalanceAndStarting(accountId);
-    const dailyPnl = await this.accounts.getDailyPnl(accountId);
-    const lossThreshold = (startingBalance * agentConfig.dailyLossLimitPercent) / 100;
-    if (dailyPnl <= -lossThreshold) {
-      await this.db.execute({
-        sql: 'UPDATE ai_agent_configs SET circuit_breaker_active = 1, circuit_breaker_reason = ? WHERE account_id = ?',
-        args: [
-          `Daily PnL ${dailyPnl.toFixed(2)} reached the configured loss limit of ${lossThreshold.toFixed(2)}`,
-          accountId,
-        ],
-      });
-      this.logger.warn(`Circuit breaker tripped for account ${accountId}`);
-      return;
-    }
-
-    for (const symbol of agentConfig.watchedSymbols.slice(0, MAX_SYMBOLS_PER_CYCLE)) {
-      try {
-        await this.runDecision(accountId, symbol, agentConfig, dailyPnl);
-      } catch (error) {
-        this.logger.warn(
-          `AI decision for ${symbol} on account ${accountId} failed: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      }
-    }
-  }
-
-  async runDecision(
-    accountId: string,
-    symbol: string,
-    agentConfig: AiAgentConfig,
-    dailyPnl: number,
-  ): Promise<AiDecision | null> {
-    const build = await this.contextEngine.build(accountId, symbol);
-    if (!build.ok || !build.context) {
-      this.logger.log(`Skipping ${symbol} for account ${accountId}: ${build.reason ?? 'unknown'}`);
-      return null;
-    }
-    const marketContext = build.context;
-
-    const geminiResult = await this.gemini.decide({
-      systemInstruction: AGENT_SYSTEM_INSTRUCTION,
-      userPrompt: JSON.stringify(marketContext),
-      thinkingLevel: build.thinkingLevel,
-    });
-
-    let validationErrors: string[] = [];
-    let normalized: NormalizedDecision | null = null;
-
-    if (geminiResult.ok && geminiResult.parsed) {
-      const validation = this.riskValidation.validate(geminiResult.parsed, {
-        symbol: marketContext.symbol,
-        spotPrice: marketContext.spotPrice,
-        assetType: marketContext.assetType,
-        marketOpen: marketContext.marketOpen,
-        volatilityPct: marketContext.volatilityPct ?? 0,
-        change24hPct: marketContext.change24hPct,
-        cashBalance: marketContext.cashBalance,
-        totalEquity: marketContext.totalEquity,
-        startingBalance: marketContext.startingBalance,
-        heldQuantity: marketContext.currentPositionQuantity,
-        maxPositionSizePercent: agentConfig.maxPositionSizePercent,
-        dailyLossLimitPercent: agentConfig.dailyLossLimitPercent,
-        dailyPnl,
-      });
-      validationErrors = validation.errors;
-      normalized = validation.normalized;
-    } else {
-      validationErrors = [geminiResult.error ?? 'GEMINI_UNAVAILABLE'];
-    }
-
-    let resultingOrderId: string | null = null;
-    if (
-      validationErrors.length === 0 &&
-      normalized &&
-      (normalized.action === 'BUY' || normalized.action === 'SELL')
-    ) {
-      if (agentConfig.mode === 'autonomous') {
-        try {
-          const order = await this.orders.createOrder(
-            accountId,
-            decisionToOrderDto({
-              symbol: marketContext.symbol,
-              side: normalized.action === 'BUY' ? 'buy' : 'sell',
-              quantity: normalized.proposedQuantity ?? 0,
-              stopLoss: normalized.proposedStopLoss,
-              takeProfit: normalized.proposedTakeProfit,
-            }),
-            'ai_agent',
-          );
-          resultingOrderId = order.id;
-        } catch (error) {
-          const code =
-            error instanceof HttpException
-              ? ((error.getResponse() as ApiError).error ?? 'ORDER_REJECTED')
-              : 'ORDER_REJECTED';
-          validationErrors.push(code);
-        }
-      }
-    }
-
-    const decisionId = randomUUID();
-    await this.db.execute({
-      sql: `INSERT INTO ai_decisions (id, account_id, symbol, action, confidence_score, proposed_quantity, proposed_stop_loss, proposed_take_profit, full_reasoning, reasoning_summary, key_factors, validation_passed, validation_errors, resulting_order_id, model_used, thinking_level, context_json, raw_response, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [
-        decisionId,
-        accountId,
-        marketContext.symbol,
-        normalized?.action ?? 'HOLD',
-        normalized?.confidenceScore ?? 0,
-        normalized?.proposedQuantity ?? null,
-        normalized?.proposedStopLoss ?? null,
-        normalized?.proposedTakeProfit ?? null,
-        geminiResult.fullReasoning,
-        normalized?.reasoningSummary ?? '',
-        JSON.stringify(normalized?.keyFactors ?? []),
-        validationErrors.length === 0 ? 1 : 0,
-        JSON.stringify(validationErrors),
-        resultingOrderId,
-        geminiResult.modelUsed,
-        build.thinkingLevel,
-        JSON.stringify(marketContext),
-        JSON.stringify(geminiResult.raw),
-        new Date().toISOString(),
-      ],
-    });
-
-    return this.getDecision(accountId, decisionId);
-  }
 
   async getConfig(accountId: string): Promise<AiAgentConfig> {
     const existing = await this.db.execute({

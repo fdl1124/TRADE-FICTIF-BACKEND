@@ -42,4 +42,16 @@ export class AssetsController {
     }
     return this.marketData.getHistory(asset.symbol, query.range);
   }
+
+  @Get(':symbol/candles')
+  async getCandles(
+    @Param('symbol') symbol: string,
+    @Query() query: PriceHistoryQueryDto,
+  ): Promise<Candle[]> {
+    const asset = findAsset(symbol);
+    if (!asset) {
+      throw ApiErrors.invalidSymbol(symbol);
+    }
+    return this.marketData.getCandles(asset.symbol, query.range);
+  }
 }

@@ -11,13 +11,27 @@ export class PriceCacheService {
 
   constructor(private readonly emitter: EventEmitter2) {}
 
-  setTick(symbol: string, price: number, change24h: number, exchangeTimestampMs?: number): void {
+  setTick(
+    symbol: string,
+    price: number,
+    change24h: number,
+    exchangeTimestampMs?: number,
+    stats?: { volume24h?: number; high24h?: number; low24h?: number },
+  ): void {
     if (!Number.isFinite(price) || price <= 0) {
       return;
     }
     const safeChange = Number.isFinite(change24h) ? change24h : 0;
-    const timestamp = new Date(exchangeTimestampMs ?? Date.now()).toISOString();
-    const tick: PriceTick = { symbol, price, timestamp, change24h: safeChange };
+    const previous = this.ticks.get(symbol);
+    const tick: PriceTick = {
+      symbol,
+      price,
+      timestamp: new Date(exchangeTimestampMs ?? Date.now()).toISOString(),
+      change24h: safeChange,
+      volume24h: stats?.volume24h ?? previous?.volume24h,
+      high24h: stats?.high24h ?? previous?.high24h,
+      low24h: stats?.low24h ?? previous?.low24h,
+    };
     this.ticks.set(symbol, tick);
     this.receivedAt.set(symbol, Date.now());
     this.emitter.emit('price.tick', tick);

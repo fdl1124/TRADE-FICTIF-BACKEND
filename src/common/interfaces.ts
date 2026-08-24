@@ -32,6 +32,18 @@ export interface PriceTick {
   price: number;
   timestamp: string;
   change24h: number;
+  volume24h?: number;
+  high24h?: number;
+  low24h?: number;
+}
+
+export interface Candle {
+  time: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number | null;
 }
 
 export interface Position {

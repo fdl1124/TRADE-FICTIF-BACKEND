@@ -20,8 +20,25 @@ import type {
   User,
 } from "@/lib/types"
 import type { View } from "@/lib/trading"
+import type { ChatMessage, Conversation } from "@/lib/api"
 
 export type PriceState = "connecting" | "live" | "reconnecting" | "closed"
+
+export type ToastTone = "success" | "error" | "info"
+
+export interface Toast {
+  id: string
+  message: string
+  tone: ToastTone
+}
+
+export interface Notification {
+  id: string
+  title: string
+  body: string
+  read: boolean
+  createdAt: string
+}
 
 export interface TradingData {
   account: Account | null
@@ -77,6 +94,12 @@ interface State extends TradingData {
   user: User | null
   authReady: boolean
   priceState: PriceState
+  toasts: Toast[]
+  notifications: Notification[]
+  chatConversations: Conversation[]
+  chatMessages: Record<string, ChatMessage[]>
+  selectedChatId: string | null
+  chatStreaming: boolean
   setView: (view: View) => void
   selectAsset: (symbol: string) => void
   setSearch: (search: string) => void
@@ -88,6 +111,14 @@ interface State extends TradingData {
   setUser: (user: User | null) => void
   setAuthReady: (ready: boolean) => void
   setPriceState: (state: PriceState) => void
+  pushToast: (message: string, tone: ToastTone) => void
+  dismissToast: (id: string) => void
+  pushNotification: (title: string, body: string) => void
+  markAllRead: () => void
+  setChatConversations: (conversations: Conversation[]) => void
+  setChatMessages: (conversationId: string, messages: ChatMessage[]) => void
+  setSelectedChatId: (id: string | null) => void
+  setChatStreaming: (streaming: boolean) => void
 }
 
 export const useTrading = create<State>((set) => ({
@@ -103,6 +134,12 @@ export const useTrading = create<State>((set) => ({
     : null,
   authReady: MOCK,
   priceState: "connecting",
+  toasts: [],
+  notifications: [],
+  chatConversations: [],
+  chatMessages: {},
+  selectedChatId: null,
+  chatStreaming: false,
   setView: (view) => set({ view }),
   selectAsset: (selectedSymbol) => set({ selectedSymbol, view: "market" }),
   setSearch: (search) => set({ search }),
@@ -122,6 +159,24 @@ export const useTrading = create<State>((set) => ({
   setUser: (user) => set({ user }),
   setAuthReady: (authReady) => set({ authReady }),
   setPriceState: (priceState) => set({ priceState }),
+  pushToast: (message, tone) =>
+    set((state) => ({
+      toasts: [...state.toasts, { id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, message, tone }],
+    })),
+  dismissToast: (id) => set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
+  pushNotification: (title, body) =>
+    set((state) => ({
+      notifications: [
+        { id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, title, body, read: false, createdAt: new Date().toISOString() },
+        ...state.notifications,
+      ],
+    })),
+  markAllRead: () => set((state) => ({ notifications: state.notifications.map((n) => ({ ...n, read: true })) })),
+  setChatConversations: (chatConversations) => set({ chatConversations }),
+  setChatMessages: (conversationId, messages) =>
+    set((state) => ({ chatMessages: { ...state.chatMessages, [conversationId]: messages } })),
+  setSelectedChatId: (selectedChatId) => set({ selectedChatId }),
+  setChatStreaming: (chatStreaming) => set({ chatStreaming }),
 }))
 
 export const isMockMode = MOCK
