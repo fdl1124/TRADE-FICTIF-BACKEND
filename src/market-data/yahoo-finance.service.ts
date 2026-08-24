@@ -147,7 +147,7 @@ export class YahooFinanceService {
           open,
           high,
           low,
-          close,
+          close: close as number,
           volume: Number.isFinite(volumes[i]) ? (volumes[i] as number) : null,
         });
       }

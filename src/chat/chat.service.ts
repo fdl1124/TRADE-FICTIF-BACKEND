@@ -243,8 +243,8 @@ Answer in the same language as the user (French if they write in French). Be con
 
     let answerText = '';
     let interactionId: string | undefined;
-    let input: typeof geminiInput | Array<{ type: 'function_result'; name: string; call_id: string; result: Array<{ type: string; text: string }> }> =
-      geminiInput;
+    let input: typeof geminiInput | Array<{ type: 'function_result'; name: string; call_id: string; result: Array<{ type: string; text: string }> }>;
+    input = geminiInput;
     const thinkingParts: string[] = [];
     const toolSteps: Array<{ name: string; summary: string }> = [];
     const sourceUrls = new Set<string>();
