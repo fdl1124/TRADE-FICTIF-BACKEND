@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS ai_agents (
 
 CREATE INDEX IF NOT EXISTS idx_ai_agents_account ON ai_agents(account_id);
 
-INSERT INTO ai_agents (id, account_id, name, profile, instructions, thinking_level, watched_symbols, max_position_size_percent, daily_loss_limit_percent, enabled, mode, circuit_breaker_active, created_at)
+INSERT INTO ai_agents (id, account_id, name, profile, instructions, thinking_level, watched_symbols, max_position_size_percent, daily_loss_limit_percent, enabled, mode, circuit_breaker_active, circuit_breaker_reason, created_at)
 SELECT
   lower(hex(randomblob(16))),
   c.account_id,
@@ -30,11 +30,13 @@ SELECT
   c.daily_loss_limit_percent,
   c.enabled,
   c.mode,
-  c.circuit_breaker_active
+  c.circuit_breaker_active,
+  NULL,
+  datetime('now')
 FROM ai_agent_configs c
 WHERE NOT EXISTS (SELECT 1 FROM ai_agents a WHERE a.account_id = c.account_id AND a.profile = 'technical');
 
-INSERT INTO ai_agents (id, account_id, name, profile, instructions, thinking_level, watched_symbols, max_position_size_percent, daily_loss_limit_percent, enabled, mode, circuit_breaker_active, created_at)
+INSERT INTO ai_agents (id, account_id, name, profile, instructions, thinking_level, watched_symbols, max_position_size_percent, daily_loss_limit_percent, enabled, mode, circuit_breaker_active, circuit_breaker_reason, created_at)
 SELECT
   lower(hex(randomblob(16))),
   c.account_id,
@@ -47,11 +49,13 @@ SELECT
   c.daily_loss_limit_percent,
   0,
   'propose',
-  0
+  0,
+  NULL,
+  datetime('now')
 FROM ai_agent_configs c
 WHERE NOT EXISTS (SELECT 1 FROM ai_agents a WHERE a.account_id = c.account_id AND a.profile = 'news');
 
-INSERT INTO ai_agents (id, account_id, name, profile, instructions, thinking_level, watched_symbols, max_position_size_percent, daily_loss_limit_percent, enabled, mode, circuit_breaker_active, created_at)
+INSERT INTO ai_agents (id, account_id, name, profile, instructions, thinking_level, watched_symbols, max_position_size_percent, daily_loss_limit_percent, enabled, mode, circuit_breaker_active, circuit_breaker_reason, created_at)
 SELECT
   lower(hex(randomblob(16))),
   c.account_id,
@@ -64,7 +68,9 @@ SELECT
   c.daily_loss_limit_percent,
   0,
   'propose',
-  0
+  0,
+  NULL,
+  datetime('now')
 FROM ai_agent_configs c
 WHERE NOT EXISTS (SELECT 1 FROM ai_agents a WHERE a.account_id = c.account_id AND a.profile = 'risk');
 
