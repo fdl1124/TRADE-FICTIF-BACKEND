@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { LIBSQL_CLIENT } from '../database/libsql-token';
 import { AccountService } from '../portfolio/account.service';
 import { OrdersService } from '../orders/orders.service';
-import { AiDecision, ApiError } from '../common/interfaces';
+import { AiDecision, ApiError, AiAgentConfig } from '../common/interfaces';
 import { CreateOrderDto } from '../common/dto/create-order.dto';
 import { UpdateAiConfigDto } from '../common/dto/update-ai-config.dto';
 import { ApiErrors } from '../common/api-error';

@@ -39,7 +39,18 @@ export interface GeminiDecisionRequest {
 
 export interface GeminiStreamRequest {
   systemInstruction: string;
-  input: string | Array<{ type: string; text?: string; inline_data?: { mime_type: string; data: string } }>;
+  input:
+    | string
+    | Array<
+        | { type: 'text'; text: string }
+        | { type: 'inline_data'; mime_type: string; data: string }
+        | {
+            type: 'function_result';
+            name: string;
+            call_id: string;
+            result: Array<{ type: 'text'; text: string }>;
+          }
+      >;
   thinkingLevel: ThinkingLevel;
   tools?: unknown[];
   previousInteractionId?: string;

@@ -235,14 +235,15 @@ Answer in the same language as the user (French if they write in French). Be con
           }))
         : [];
 
-    const geminiInput =
+    const firstInputBase = firstInput;
+    const geminiInput: string | Array<{ type: 'text'; text: string } | { type: 'inline_data'; mime_type: string; data: string }> =
       orderedCopies.length > 0
-        ? [{ type: 'text', text: firstInput }, ...orderedCopies]
-        : firstInput;
+        ? [{ type: 'text' as const, text: firstInputBase }, ...orderedCopies]
+        : firstInputBase;
 
     let answerText = '';
     let interactionId: string | undefined;
-    let input: string | Array<{ type: string; name?: string; call_id?: string; result?: Array<{ type: string; text: string }>; text?: string; inline_data?: unknown }> =
+    let input: typeof geminiInput | Array<{ type: 'function_result'; name: string; call_id: string; result: Array<{ type: string; text: string }> }> =
       geminiInput;
     const thinkingParts: string[] = [];
     const toolSteps: Array<{ name: string; summary: string }> = [];

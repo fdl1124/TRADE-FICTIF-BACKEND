@@ -2,7 +2,7 @@ import { Controller, Get, Param, Query } from '@nestjs/common';
 import { MarketDataService } from './market-data.service';
 import { ASSETS, findAsset } from '../common/constants/assets';
 import { ApiErrors } from '../common/api-error';
-import { Asset, PriceTick } from '../common/interfaces';
+import { Asset, Candle, PriceTick } from '../common/interfaces';
 import { PriceHistoryQueryDto } from '../common/dto/query-dtos';
 
 @Controller('api/assets')
