@@ -243,8 +243,14 @@ Answer in the same language as the user (French if they write in French). Be con
 
     let answerText = '';
     let interactionId: string | undefined;
-    let input: typeof geminiInput | Array<{ type: 'function_result'; name: string; call_id: string; result: Array<{ type: string; text: string }> }>;
-    input = geminiInput;
+    type StreamInput =
+      | string
+      | Array<
+          | { type: 'text'; text: string }
+          | { type: 'inline_data'; mime_type: string; data: string }
+          | { type: 'function_result'; name: string; call_id: string; result: Array<{ type: 'text'; text: string }> }
+        >;
+    let input: StreamInput = geminiInput as StreamInput;
     const thinkingParts: string[] = [];
     const toolSteps: Array<{ name: string; summary: string }> = [];
     const sourceUrls = new Set<string>();
@@ -258,7 +264,7 @@ Answer in the same language as the user (French if they write in French). Be con
 
         for await (const event of this.gemini.streamInteraction({
           systemInstruction,
-          input: input as string | Array<{ type: 'text'; text: string } | { type: 'inline_data'; mime_type: string; data: string } | { type: 'function_result'; name: string; call_id: string; result: Array<{ type: string; text: string }> }>,
+          input: input as StreamInput,
           thinkingLevel,
           tools: [...PLATFORM_TOOL_DECLARATIONS, { type: 'google_search' }, { type: 'url_context' }],
           previousInteractionId: loop === 0 ? undefined : interactionId,
@@ -335,10 +341,10 @@ Answer in the same language as the user (French if they write in French). Be con
         }
         input = [
           {
-            type: 'function_result',
+            type: 'function_result' as const,
             name: pendingCall.name,
             call_id: pendingCall.callId,
-            result: [{ type: 'text', text: JSON.stringify(execution.result) }],
+            result: [{ type: 'text' as const, text: JSON.stringify(execution.result) }],
           },
         ];
       }
