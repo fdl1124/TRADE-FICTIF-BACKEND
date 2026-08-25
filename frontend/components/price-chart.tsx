@@ -191,8 +191,9 @@ export function PriceChart({ symbol, range }: { symbol: string; range: HistoryRa
     if (!tick || typeof tick.price !== "number") return
     const series = candleRef.current
     const volumeSeries = volumeRef.current
+    const chart = chartRef.current
     const data = dataRef.current
-    if (!series || !volumeSeries || !data || data.length === 0) return
+    if (!series || !volumeSeries || !chart || !data || data.length === 0) return
     const last = data[data.length - 1]
     const price = tick.price
     const bucket = Math.floor(Date.now() / 1000 / BUCKET_SECONDS[range]) * BUCKET_SECONDS[range] as UTCTimestamp
@@ -225,11 +226,16 @@ export function PriceChart({ symbol, range }: { symbol: string; range: HistoryRa
       value: next.volume ?? 0,
       color: next.close >= next.open ? "rgba(66,201,138,0.35)" : "rgba(240,109,114,0.35)",
     })
+    if (lastUpdate === 0) {
+      chart.timeScale().fitContent()
+    }
     setLastUpdate(Date.now())
   }, [tick, range])
 
   const legend = hover ?? (dataRef.current.length > 0 ? dataRef.current[dataRef.current.length - 1] : null)
   const up = legend ? legend.close >= legend.open : true
+  const legendPrecision = legend ? pricePrecision(legend.close) : 2
+  const fmt = (value: number) => value.toFixed(legendPrecision)
 
   return (
     <div className="w-full" aria-label="Graphique de prix de l'actif">
@@ -250,16 +256,16 @@ export function PriceChart({ symbol, range }: { symbol: string; range: HistoryRa
           {legend && (
             <>
               <span>
-                O <span className="mono" style={{ color: "var(--foreground)" }}>{legend.open.toFixed(2)}</span>
+                O <span className="mono" style={{ color: "var(--foreground)" }}>{fmt(legend.open)}</span>
               </span>
               <span>
-                H <span style={{ color: "var(--mint)" }}>{legend.high.toFixed(2)}</span>
+                H <span style={{ color: "var(--mint)" }}>{fmt(legend.high)}</span>
               </span>
               <span>
-                L <span style={{ color: "var(--coral)" }}>{legend.low.toFixed(2)}</span>
+                L <span style={{ color: "var(--coral)" }}>{fmt(legend.low)}</span>
               </span>
               <span>
-                C <span style={{ color: up ? "var(--mint)" : "var(--coral)" }}>{legend.close.toFixed(2)}</span>
+                C <span style={{ color: up ? "var(--mint)" : "var(--coral)" }}>{fmt(legend.close)}</span>
               </span>
               {legend.volume !== null && legend.volume !== undefined && (
                 <span>
