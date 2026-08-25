@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, LineStyle, createChart } from "lightweight-charts"
 import type { IChartApi, ISeriesApi, Time, UTCTimestamp } from "lightweight-charts"
 import { getCandles } from "@/lib/api"
-import type { HistoryRange } from "@/lib/types"
+import type { Candle, HistoryRange } from "@/lib/types"
 import { useTrading } from "@/store/use-trading"
 
 type CandlePoint = { time: UTCTimestamp; open: number; high: number; low: number; close: number; volume: number | null }
@@ -24,21 +24,37 @@ export function PriceChart({ symbol, range }: { symbol: string; range: HistoryRa
   const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null)
   const volumeRef = useRef<ISeriesApi<"Histogram"> | null>(null)
   const dataRef = useRef<CandlePoint[]>([])
+  const [candles, setCandles] = useState<Candle[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
-  const [empty, setEmpty] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
   const [hover, setHover] = useState<CandlePoint | null>(null)
   const [lastUpdate, setLastUpdate] = useState<number>(0)
   const tick = useTrading((s) => s.prices[symbol])
 
   useEffect(() => {
-    if (!containerRef.current) return
     let disposed = false
     setLoading(true)
     setError(false)
-    setEmpty(false)
-    setHover(null)
+    setCandles(null)
+    getCandles(symbol, range)
+      .then((data) => {
+        if (disposed) return
+        setCandles(data && data.length > 0 ? data : [])
+        setLoading(false)
+      })
+      .catch(() => {
+        if (disposed) return
+        setError(true)
+        setLoading(false)
+      })
+    return () => {
+      disposed = true
+    }
+  }, [symbol, range, reloadKey])
+
+  useEffect(() => {
+    if (!candles || candles.length === 0 || !containerRef.current) return
     const container = containerRef.current
     container.innerHTML = ""
 
@@ -93,11 +109,43 @@ export function PriceChart({ symbol, range }: { symbol: string; range: HistoryRa
     volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.84, bottom: 0 } })
     volumeRef.current = volumeSeries
 
-    const resize = new ResizeObserver(() => {
-      if (!container) return
-      chart.applyOptions({ width: container.clientWidth })
+    const points: CandlePoint[] = candles
+      .map((c) => ({
+        time: Math.floor(new Date(c.time).getTime() / 1000) as UTCTimestamp,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume,
+      }))
+      .sort((a, b) => a.time - b.time)
+    const deduped: CandlePoint[] = []
+    for (const p of points) {
+      const lastP = deduped[deduped.length - 1]
+      if (lastP && lastP.time === p.time) deduped[deduped.length - 1] = p
+      else deduped.push(p)
+    }
+    dataRef.current = deduped
+
+    candleSeries.setData(
+      deduped.map((p) => ({ time: p.time, open: p.open, high: p.high, low: p.low, close: p.close })),
+    )
+    volumeSeries.setData(
+      deduped.map((p) => ({
+        time: p.time,
+        value: p.volume ?? 0,
+        color: p.close >= p.open ? "rgba(66,201,138,0.35)" : "rgba(240,109,114,0.35)",
+      })),
+    )
+    const lastPrice = deduped[deduped.length - 1].close
+    candleSeries.applyOptions({
+      priceFormat: {
+        type: "price",
+        precision: pricePrecision(lastPrice),
+        minMove: 1 / 10 ** pricePrecision(lastPrice),
+      },
     })
-    resize.observe(container)
+    chart.timeScale().fitContent()
 
     chart.subscribeCrosshairMove((param) => {
       if (!param.time || !param.seriesData) {
@@ -122,70 +170,13 @@ export function PriceChart({ symbol, range }: { symbol: string; range: HistoryRa
       })
     })
 
-    getCandles(symbol, range)
-      .then((candles) => {
-        if (disposed) return
-        if (!candles || candles.length === 0) {
-          setEmpty(true)
-          setLoading(false)
-          return
-        }
-        const points: CandlePoint[] = candles
-          .map((c) => ({
-            time: Math.floor(new Date(c.time).getTime() / 1000) as UTCTimestamp,
-            open: c.open,
-            high: c.high,
-            low: c.low,
-            close: c.close,
-            volume: c.volume,
-          }))
-          .sort((a, b) => a.time - b.time)
-        const deduped: CandlePoint[] = []
-        for (const p of points) {
-          const last = deduped[deduped.length - 1]
-          if (last && last.time === p.time) deduped[deduped.length - 1] = p
-          else deduped.push(p)
-        }
-        dataRef.current = deduped
-        setEmpty(deduped.length === 0)
-        if (deduped.length > 0) {
-          candleSeries.setData(
-            deduped.map((p) => ({ time: p.time, open: p.open, high: p.high, low: p.low, close: p.close })),
-          )
-          volumeSeries.setData(
-            deduped.map((p) => ({
-              time: p.time,
-              value: p.volume ?? 0,
-              color: p.close >= p.open ? "rgba(66,201,138,0.35)" : "rgba(240,109,114,0.35)",
-            })),
-          )
-          const lastPrice = deduped[deduped.length - 1].close
-          candleSeries.applyOptions({
-            priceFormat: {
-              type: "price",
-              precision: pricePrecision(lastPrice),
-              minMove: 1 / 10 ** pricePrecision(lastPrice),
-            },
-          })
-          chart.timeScale().fitContent()
-        }
-        setLoading(false)
-      })
-      .catch(() => {
-        if (disposed) return
-        setError(true)
-        setLoading(false)
-      })
-
     return () => {
-      disposed = true
-      resize.disconnect()
       chart.remove()
       chartRef.current = null
       candleRef.current = null
       volumeRef.current = null
     }
-  }, [symbol, range, reloadKey])
+  }, [candles])
 
   useEffect(() => {
     if (!tick || typeof tick.price !== "number") return
@@ -196,11 +187,11 @@ export function PriceChart({ symbol, range }: { symbol: string; range: HistoryRa
     if (!series || !volumeSeries || !chart || !data || data.length === 0) return
     const last = data[data.length - 1]
     const price = tick.price
-    const bucket = Math.floor(Date.now() / 1000 / BUCKET_SECONDS[range]) * BUCKET_SECONDS[range] as UTCTimestamp
+    const bucket = Math.floor(Date.now() / 1000 / BUCKET_SECONDS[range]) * BUCKET_SECONDS[range]
     const current = last.time === bucket ? last : null
     const next: CandlePoint = current
       ? {
-          time: bucket,
+          time: bucket as UTCTimestamp,
           open: current.open,
           high: Math.max(current.high, price),
           low: Math.min(current.low, price),
@@ -208,7 +199,7 @@ export function PriceChart({ symbol, range }: { symbol: string; range: HistoryRa
           volume: current.volume,
         }
       : {
-          time: bucket,
+          time: bucket as UTCTimestamp,
           open: price,
           high: price,
           low: price,
@@ -226,9 +217,6 @@ export function PriceChart({ symbol, range }: { symbol: string; range: HistoryRa
       value: next.volume ?? 0,
       color: next.close >= next.open ? "rgba(66,201,138,0.35)" : "rgba(240,109,114,0.35)",
     })
-    if (lastUpdate === 0) {
-      chart.timeScale().fitContent()
-    }
     setLastUpdate(Date.now())
   }, [tick, range])
 
@@ -239,7 +227,32 @@ export function PriceChart({ symbol, range }: { symbol: string; range: HistoryRa
 
   return (
     <div className="w-full" aria-label="Graphique de prix de l'actif">
-      {!loading && !error && !empty && (
+      {loading && (
+        <div className="flex flex-col gap-3 py-4">
+          <div className="skeleton skeleton-card w-full" style={{ height: 420 }} />
+        </div>
+      )}
+      {!loading && error && (
+        <div className="empty" style={{ height: 420, display: "grid", placeItems: "center" }}>
+          <div>
+            <p>Erreur lors du chargement de l&apos;historique.</p>
+            <button className="primary" onClick={() => setReloadKey((k) => k + 1)}>
+              Réessayer
+            </button>
+          </div>
+        </div>
+      )}
+      {!loading && !error && candles !== null && candles.length === 0 && (
+        <div className="empty" style={{ height: 420, display: "grid", placeItems: "center" }}>
+          <div>
+            <p>Historique indisponible pour cet actif.</p>
+            <button className="primary" onClick={() => setReloadKey((k) => k + 1)}>
+              Réessayer
+            </button>
+          </div>
+        </div>
+      )}
+      {!loading && !error && candles !== null && candles.length > 0 && (
         <div
           style={{
             display: "flex",
@@ -281,36 +294,9 @@ export function PriceChart({ symbol, range }: { symbol: string; range: HistoryRa
           )}
         </div>
       )}
-      {loading && (
-        <div className="flex flex-col gap-3 py-4">
-          <div className="skeleton skeleton-card w-full" style={{ height: 420 }} />
-        </div>
+      {!loading && !error && candles !== null && candles.length > 0 && (
+        <div ref={containerRef} className="w-full" style={{ height: 420 }} />
       )}
-      {!loading && error && (
-        <div className="empty" style={{ height: 420, display: "grid", placeItems: "center" }}>
-          <div>
-            <p>Erreur lors du chargement de l&apos;historique.</p>
-            <button className="primary" onClick={() => setReloadKey((k) => k + 1)}>
-              Réessayer
-            </button>
-          </div>
-        </div>
-      )}
-      {!loading && !error && empty && (
-        <div className="empty" style={{ height: 420, display: "grid", placeItems: "center" }}>
-          <div>
-            <p>Historique indisponible pour cet actif.</p>
-            <button className="primary" onClick={() => setReloadKey((k) => k + 1)}>
-              Réessayer
-            </button>
-          </div>
-        </div>
-      )}
-      <div
-        ref={containerRef}
-        className="w-full"
-        style={{ display: loading || error || empty ? "none" : "block", height: 420 }}
-      />
     </div>
   )
 }
