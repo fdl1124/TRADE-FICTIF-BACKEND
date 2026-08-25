@@ -40,10 +40,11 @@ export function PriceChart({ symbol, range }: { symbol: string; range: HistoryRa
     setEmpty(false)
     setHover(null)
     const container = containerRef.current
+    container.innerHTML = ""
 
     const chart = createChart(container, {
       height: 420,
-      autoSize: false,
+      autoSize: true,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
         textColor: "#8C9AAD",
@@ -97,7 +98,6 @@ export function PriceChart({ symbol, range }: { symbol: string; range: HistoryRa
       chart.applyOptions({ width: container.clientWidth })
     })
     resize.observe(container)
-    chart.applyOptions({ width: container.clientWidth })
 
     chart.subscribeCrosshairMove((param) => {
       if (!param.time || !param.seriesData) {
