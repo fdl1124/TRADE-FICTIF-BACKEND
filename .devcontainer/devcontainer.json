@@ -1,0 +1,10 @@
+{
+  "name": "TRADE-FICTIF",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+  "forwardPorts": [3000, 4000],
+  "portsAttributes": {
+    "3000": { "label": "Frontend", "onAutoForward": "notify" },
+    "4000": { "label": "Backend", "onAutoForward": "silent" }
+  },
+  "postCreateCommand": "npm install && cd frontend && npm install"
+}
