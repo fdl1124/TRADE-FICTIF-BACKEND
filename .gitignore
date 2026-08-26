@@ -10,3 +10,4 @@ local.db-*
 coverage/
 *.zip
 frontend/README.md
+text 1.txt
