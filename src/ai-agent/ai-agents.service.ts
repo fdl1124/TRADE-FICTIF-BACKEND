@@ -20,17 +20,18 @@ export type AgentProfile = (typeof AGENT_PROFILES)[number];
 const MAX_SYMBOLS_PER_AGENT_RUN = 3;
 const MAX_FUNCTION_LOOPS = 5;
 
-const BASE_RULES = `You are an autonomous trading analysis agent for a simulated portfolio with fictional money.
-You receive a JSON market context for exactly one symbol: spot price, indicators (RSI14, SMA20, SMA50, volatility), current position and cash.
-Decide between BUY, SELL and HOLD for that symbol only.
-Rules:
-- The ticker field must be exactly the symbol from the context.
-- confidence_score is between 0.0 and 1.0.
-- proposed_quantity is expressed in units of the asset, only for BUY and SELL, null for HOLD.
-- proposed_stop_loss and proposed_take_profit are absolute prices, only meaningful for BUY, null otherwise. Stop loss must be below spot price and within 10% of it. Take profit must be above spot price.
-- SELL is only possible when currentPositionQuantity is greater than zero.
-- reasoning_summary is a single short sentence. key_factors is a list of short factor labels.
-Answer with a single JSON object matching the provided schema and nothing else.`;
+const BASE_RULES = `Tu es un agent d'analyse de trading autonome pour un portefeuille simulé en argent fictif.
+Tu reçois un contexte de marché JSON pour exactement un symbole : prix spot, indicateurs (RSI14, SMA20, SMA50, volatilité), position actuelle et liquidités.
+Décide entre BUY, SELL et HOLD pour ce symbole uniquement.
+Règles :
+- Le champ ticker doit être exactement le symbole du contexte.
+- confidence_score est entre 0.0 et 1.0.
+- proposed_quantity est exprimé en unités de l'actif, seulement pour BUY et SELL, null pour HOLD.
+- IMPORTANT : la valeur totale de la position (proposed_quantity × spotPrice) ne doit JAMAIS dépasser la limite de taille de position configurée. Reste en dessous.
+- proposed_stop_loss et proposed_take_profit sont des prix absolus, seulement pour BUY, null sinon. Le stop loss doit être sous le prix spot et à moins de 10% de celui-ci. Le take profit doit être au-dessus du prix spot.
+- SELL n'est possible que si currentPositionQuantity est supérieur à zéro.
+- reasoning_summary est une seule phrase courte en français. key_factors est une liste de labels courts en français.
+Réponds avec un seul objet JSON correspondant au schéma fourni et rien d'autre. Tout le texte (reasoning_summary, key_factors) doit être en français.`;
 
 const PROFILE_PROMPTS: Record<AgentProfile, string> = {
   technical: `${BASE_RULES}\nSpecialty: pure technical analysis. Base your decision strictly on the provided indicators (RSI14, SMA20/50 crossovers, realized volatility) and price structure. Ignore any news considerations.`,
@@ -350,13 +351,14 @@ export class AiAgentsService {
 
   private buildSystemInstruction(agent: AgentInstance): string {
     const base = PROFILE_PROMPTS[agent.profile] ?? PROFILE_PROMPTS.custom;
+    const maxPositionValue = `Limite stricte : la valeur totale de la position (proposed_quantity × spotPrice) ne doit pas dépasser ${agent.maxPositionSizePercent}% du capital total. Calcule proposed_quantity en conséquence.`;
     if (agent.profile === 'custom' && agent.instructions && agent.instructions.trim().length > 0) {
-      return `${base}\nCustom instructions from the portfolio owner:\n${agent.instructions.trim()}`;
+      return `${base}\n${maxPositionValue}\nInstructions personnalisées du propriétaire :\n${agent.instructions.trim()}`;
     }
     if (agent.profile !== 'custom' && agent.instructions && agent.instructions.trim().length > 0) {
-      return `${base}\nAdditional instructions:\n${agent.instructions.trim()}`;
+      return `${base}\n${maxPositionValue}\nInstructions supplémentaires :\n${agent.instructions.trim()}`;
     }
-    return base;
+    return `${base}\n${maxPositionValue}`;
   }
 
   private async readDecision(accountId: string, decisionId: string): Promise<AiDecision> {
