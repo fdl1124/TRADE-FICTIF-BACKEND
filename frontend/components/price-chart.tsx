@@ -81,8 +81,8 @@ export function PriceChart({ symbol, range }: { symbol: string; range: HistoryRa
       },
       crosshair: {
         mode: CrosshairMode.Normal,
-        vertLine: { color: "#39C6D4", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#1B2534" },
-        horzLine: { color: "#39C6D4", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#1B2534" },
+        vertLine: { color: "rgba(57,198,212,0.4)", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#1B2534" },
+        horzLine: { color: "rgba(57,198,212,0.4)", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#1B2534" },
       },
       handleScroll: true,
       handleScale: { axisPressedMouseMove: { time: true, price: false }, mouseWheel: false, pinch: true },

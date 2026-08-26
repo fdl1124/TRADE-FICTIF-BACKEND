@@ -142,6 +142,10 @@ export class YahooFinanceService {
         const open = Number.isFinite(opens[i]) ? (opens[i] as number) : (close as number);
         const high = Number.isFinite(highs[i]) ? (highs[i] as number) : (close as number);
         const low = Number.isFinite(lows[i]) ? (lows[i] as number) : (close as number);
+        const median = (open + (close as number)) / 2;
+        if (median > 0 && (high > median * 3 || low < median * 0.33)) {
+          continue;
+        }
         candles.push({
           time: new Date(timestamps[i] * 1000).toISOString(),
           open,
