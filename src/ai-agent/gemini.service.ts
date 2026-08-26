@@ -6,7 +6,7 @@ import { GeminiKeyRing } from './gemini-key-ring';
 const GEMINI_INTERACTIONS_URL = 'https://generativelanguage.googleapis.com/v1beta/interactions';
 export const GEMINI_PRIMARY_MODEL = 'gemini-3.7-flash';
 export const GEMINI_FALLBACK_MODEL = 'gemini-3.6-flash';
-const PRIMARY_TIMEOUT_MS = 2_000;
+const PRIMARY_TIMEOUT_MS = 6_000;
 const FALLBACK_TIMEOUT_MS = 8_000;
 const MAX_KEYS = 10;
 const KEY_FAILURE_STATUSES: ReadonlySet<number> = new Set([401, 403, 429]);
