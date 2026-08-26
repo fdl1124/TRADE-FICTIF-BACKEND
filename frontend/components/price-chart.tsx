@@ -85,7 +85,7 @@ export function PriceChart({ symbol, range }: { symbol: string; range: HistoryRa
         horzLine: { color: "#39C6D4", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#1B2534" },
       },
       handleScroll: true,
-      handleScale: true,
+      handleScale: { axisPressedMouseMove: { time: true, price: false }, mouseWheel: false, pinch: true },
       localization: {
         priceFormatter: (price: number) => price.toFixed(pricePrecision(price)),
       },
