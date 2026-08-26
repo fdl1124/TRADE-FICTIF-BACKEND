@@ -1747,6 +1747,72 @@ function DecisionRow({ d }: { d: ReturnType<typeof useTrading.getState>["decisio
     </button>
   )
 }
+function SettingsPage() {
+  const user = useTrading((s) => s.user)
+  const account = useTrading((s) => s.account)
+  const orders = useTrading((s) => s.orders)
+  const positions = useTrading((s) => s.positions)
+  const decisions = useTrading((s) => s.decisions)
+  const router = useRouter()
+  const [confirmLogout, setConfirmLogout] = useState(false)
+
+  function exportToCsv(filename: string, rows: Record<string, unknown>[]) {
+    if (!rows || rows.length === 0) return
+    const headers = Object.keys(rows[0])
+    const escape = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`
+    const csv = [headers.map(escape).join(","), ...rows.map((r) => headers.map((h) => escape(r[h])).join(","))].join("\n")
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <>
+      <SectionHead eyebrow="COMPTE & TRAÇABILITÉ" title="Paramètres" copy="Informations du compte, préférences et accès aux données." />
+      <div className="settings-grid">
+        <section className="panel">
+          <span className="eyebrow">PROFIL</span>
+          <h2>{user?.displayName ?? "Utilisateur"}</h2>
+          <dl className="settings-list">
+            <dt>Adresse e-mail</dt>
+            <dd>{user?.email ?? "—"}</dd>
+            <dt>Compte créé</dt>
+            <dd>{user ? new Date(user.createdAt).toLocaleDateString("fr-FR") : "—"}</dd>
+            <dt>Compte de simulation</dt>
+            <dd>{account ? `Solde ${money(account.balance)} sur ${money(account.startingBalance)}` : "—"}</dd>
+            <dt>Devise</dt>
+            <dd>USD — Dollar américain</dd>
+          </dl>
+        </section>
+        <section className="panel">
+          <span className="eyebrow">DONNÉES</span>
+          <h2>Export & audit</h2>
+          <p>Téléchargez vos données au format CSV.</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <button disabled={!orders.length} onClick={() => exportToCsv("ledger-orders.csv", orders)}>Exporter les ordres ({orders.length})</button>
+            <button disabled={!positions.length} onClick={() => exportToCsv("ledger-positions.csv", positions)}>Exporter les positions ({positions.length})</button>
+            <button disabled={!decisions.length} onClick={() => exportToCsv("ledger-decisions.csv", decisions)}>Exporter les décisions ({decisions.length})</button>
+          </div>
+        </section>
+        <section className="panel danger-zone">
+          <span className="eyebrow">SESSION</span>
+          <h2>Déconnexion</h2>
+          <p>Votre historique et votre compte de simulation restent conservés.</p>
+          {confirmLogout ? (
+            <ConfirmDialog title="Se déconnecter" body="Vous devrez vous reconnecter." onConfirm={async () => { await signOutUser(); router.push("/login") }} onCancel={() => setConfirmLogout(false)} />
+          ) : (
+            <button className="danger" onClick={() => setConfirmLogout(true)}>Se déconnecter</button>
+          )}
+        </section>
+      </div>
+    </>
+  )
+}
+
 export function TradingApp({ initialView, initialSymbol }: { initialView?: View; initialSymbol?: string } = {}) {
   const view = useTrading((s) => s.view as unknown as AppView)
   const setView = useTrading((s) => s.setView)
