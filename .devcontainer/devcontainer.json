@@ -1,6 +1,9 @@
 {
   "name": "TRADE-FICTIF",
   "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+  "features": {
+    "ghcr.io/devcontainers/features/sshd:1": { "version": "latest" }
+  },
   "forwardPorts": [3000, 4000],
   "portsAttributes": {
     "3000": { "label": "Frontend", "onAutoForward": "notify" },
