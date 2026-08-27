@@ -101,6 +101,8 @@ export function AgentsPage() {
   const [formError, setFormError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<AgentInstance | null>(null)
+  const [togglingId, setTogglingId] = useState<string | null>(null)
 
   const selectedAgent = agents.find((a) => a.id === selectedId) ?? null
 
@@ -192,8 +194,22 @@ export function AgentsPage() {
     }
   }
 
+  async function handleToggle(agent: AgentInstance) {
+    setTogglingId(agent.id)
+    try {
+      const updated = await updateAgent(agent.id, { enabled: !agent.enabled } as Partial<CreateAgentInput> & { enabled: boolean })
+      setAgents((prev) => prev.map((a) => (a.id === updated.id ? updated : a)))
+      if (selectedAgent?.id === updated.id) setSelectedId(updated.id)
+      if (agents[0]?.id === updated.id) setData({ aiConfig: toLegacyConfig(updated) as never })
+      pushToast(updated.enabled ? "Agent démarré" : "Agent arrêté", "success")
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : "Basculement impossible", "error")
+    } finally {
+      setTogglingId(null)
+    }
+  }
+
   async function handleDelete(agent: AgentInstance) {
-    if (typeof window !== "undefined" && !window.confirm(`Supprimer ${agent.name} ?`)) return
     setDeletingId(agent.id)
     try {
       await deleteAgent(agent.id)
@@ -314,30 +330,53 @@ export function AgentsPage() {
                   {agent.mode === "autonomous" ? "AUTONOME" : "PROPOSE"} · {agent.thinkingLevel.toUpperCase()}
                 </span>
               </div>
-              <span
-                role="button"
-                tabIndex={0}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleRun(agent)
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
+              <div style={{ display: "flex", gap: 8, width: "100%" }}>
+                <button
+                  type="button"
+                  disabled={togglingId === agent.id}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleToggle(agent)
+                  }}
+                  style={{
+                    flex: 1,
+                    justifyContent: "center",
+                    display: "inline-flex",
+                    padding: "10px 10px",
+                    border: "1px solid var(--border)",
+                    background: agent.enabled ? "transparent" : "var(--cyan)",
+                    color: agent.enabled ? "var(--muted)" : "#071015",
+                    borderRadius: 6,
+                    fontSize: 12,
+                  }}
+                >
+                  {agent.enabled ? "Arrêter" : "Démarrer"}
+                </button>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => {
                     e.stopPropagation()
                     handleRun(agent)
-                  }
-                }}
-                className="primary"
-                style={{
-                  justifyContent: "center",
-                  width: "100%",
-                  opacity: runningId === agent.id ? 0.7 : 1,
-                  pointerEvents: runningId === agent.id ? "none" : "auto",
-                  display: "inline-flex",
-                }}
-              >
-                {runningId === agent.id ? "Lancement…" : "Lancer maintenant"}
-              </span>
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.stopPropagation()
+                      handleRun(agent)
+                    }
+                  }}
+                  className="primary"
+                  style={{
+                    flex: 2,
+                    justifyContent: "center",
+                    opacity: runningId === agent.id ? 0.7 : 1,
+                    pointerEvents: runningId === agent.id ? "none" : "auto",
+                    display: "inline-flex",
+                  }}
+                >
+                  {runningId === agent.id ? "Lancement…" : "Lancer maintenant"}
+                </span>
+              </div>
               {agent.circuitBreakerActive && (
                 <div className="warning" style={{ marginTop: 4 }}>
                   <span style={{ fontSize: 11 }}>Circuit breaker actif: {agent.circuitBreakerReason ?? "limite atteinte"}</span>
@@ -390,11 +429,26 @@ export function AgentsPage() {
             </dd>
           </dl>
 
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              disabled={togglingId === selectedAgent.id}
+              onClick={() => handleToggle(selectedAgent)}
+              style={{
+                flex: selectedAgent.enabled ? 0 : 1,
+                padding: "10px 14px",
+                border: "1px solid var(--border)",
+                background: selectedAgent.enabled ? "transparent" : "var(--cyan)",
+                color: selectedAgent.enabled ? "var(--muted)" : "#071015",
+                borderRadius: 6,
+                fontSize: 12,
+              }}
+            >
+              {selectedAgent.enabled ? "Arrêter" : "Démarrer"}
+            </button>
             <button className="primary" onClick={() => openEdit(selectedAgent)}>
               Éditer
             </button>
-            <button className="danger" disabled={deletingId === selectedAgent.id} onClick={() => handleDelete(selectedAgent)}>
+            <button className="danger" disabled={deletingId === selectedAgent.id} onClick={() => setDeleteTarget(selectedAgent)}>
               {deletingId === selectedAgent.id ? "Suppression…" : "Supprimer"}
             </button>
             <button
@@ -449,6 +503,51 @@ export function AgentsPage() {
           ))
         )}
       </div>
+
+      {deleteTarget != null && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            zIndex: 60,
+            display: "grid",
+            placeItems: "center",
+            padding: 16,
+          }}
+          onClick={() => setDeleteTarget(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(440px,92vw)",
+              background: "var(--panel)",
+              border: "1px solid var(--border)",
+              padding: 18,
+              borderRadius: 10,
+            }}
+          >
+            <h3 style={{ margin: 0, fontSize: 15 }}>Supprimer l’agent ?</h3>
+            <p style={{ margin: "8px 0 14px", color: "var(--muted)", lineHeight: 1.5 }}>{`Supprimer ${deleteTarget.name} ? Cette action est immédiate.`}</p>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button onClick={() => setDeleteTarget(null)} style={{ border: "1px solid var(--border)", background: "transparent", padding: "8px 12px", borderRadius: 6 }}>
+                Annuler
+              </button>
+              <button
+                className="danger"
+                style={{ border: "1px solid rgb(240 109 114 / .35)", background: "transparent", color: "var(--coral)", padding: "8px 12px", borderRadius: 6 }}
+                onClick={async () => {
+                  const t = deleteTarget
+                  setDeleteTarget(null)
+                  await handleDelete(t)
+                }}
+              >
+                Supprimer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {drawerOpen && (
         <div

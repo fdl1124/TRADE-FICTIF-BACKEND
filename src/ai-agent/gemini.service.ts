@@ -4,10 +4,10 @@ import { ThinkingLevel } from './context-engine.service';
 import { GeminiKeyRing } from './gemini-key-ring';
 
 const GEMINI_INTERACTIONS_URL = 'https://generativelanguage.googleapis.com/v1beta/interactions';
-export const GEMINI_PRIMARY_MODEL = 'gemini-3.7-flash';
-export const GEMINI_FALLBACK_MODEL = 'gemini-3.6-flash';
-const PRIMARY_TIMEOUT_MS = 30_000;
-const FALLBACK_TIMEOUT_MS = 8_000;
+export const GEMINI_PRIMARY_MODEL = process.env.GEMINI_PRIMARY_MODEL || 'gemini-3.7-flash';
+export const GEMINI_FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-3.6-flash';
+const PRIMARY_TIMEOUT_MS = 60_000;
+const FALLBACK_TIMEOUT_MS = 30_000;
 const MAX_KEYS = 10;
 const KEY_FAILURE_STATUSES: ReadonlySet<number> = new Set([401, 403, 429]);
 const STREAM_IDLE_TIMEOUT_MS = 90_000;
@@ -28,7 +28,7 @@ interface StreamWireEvent {
   error?: { message?: string; code?: string };
 }
 
-export type GeminiModelName = typeof GEMINI_PRIMARY_MODEL | typeof GEMINI_FALLBACK_MODEL;
+export type GeminiModelName = string;
 
 export interface GeminiDecisionRequest {
   systemInstruction: string;
@@ -190,6 +190,13 @@ export class GeminiService {
         } catch (error) {
           failures.push(describeFailure(attempt.model, keyIndex, error));
           if (error instanceof GeminiHttpError && KEY_FAILURE_STATUSES.has(error.status)) {
+            if (error.status === 429) {
+              this.logger.warn(
+                `${attempt.model} surcharge (HTTP 429) sur la clé #${keyIndex + 1}, bascule sur le modele de repli`,
+              );
+              onlyKeyFailures = false;
+              break;
+            }
             this.ring.markFailed(keyIndex, keyFailureReason(error.status));
             if (this.ring.size > 1 && this.ring.rotateToNextAvailable()) {
               this.logger.warn(
@@ -415,17 +422,22 @@ export class GeminiService {
           if (timer) clearTimeout(timer);
           timer = null;
           const message = error instanceof Error ? error.message : String(error);
-          if (
-            error instanceof GeminiHttpError &&
-            KEY_FAILURE_STATUSES.has(error.status) &&
-            this.ring.size > 1 &&
-            this.ring.rotateToNextAvailable()
-          ) {
+          if (error instanceof GeminiHttpError && KEY_FAILURE_STATUSES.has(error.status)) {
+            if (error.status === 429) {
+              this.logger.warn(`${model} surcharge (HTTP 429) pendant le stream sur la clé #${keyIndex + 1}`);
+              if (attemptIndex < attempts.length - 1) {
+                break;
+              }
+              yield { kind: 'failed', message: 'Modele Gemini en forte demande, reessaie dans un instant' };
+              return;
+            }
             this.ring.markFailed(keyIndex, keyFailureReason(error.status));
-            this.logger.warn(
-              `Gemini key #${keyIndex + 1} rejected during stream (HTTP ${error.status}), rotating to key #${this.ring.currentIndexValue() + 1}`,
-            );
-            continue;
+            if (this.ring.size > 1 && this.ring.rotateToNextAvailable()) {
+              this.logger.warn(
+                `Gemini key #${keyIndex + 1} rejected during stream (HTTP ${error.status}), rotating to key #${this.ring.currentIndexValue() + 1}`,
+              );
+              continue;
+            }
           }
           if (attemptIndex < attempts.length - 1) {
             this.logger.warn(`Streaming with ${model} failed: ${message}, trying next model`);

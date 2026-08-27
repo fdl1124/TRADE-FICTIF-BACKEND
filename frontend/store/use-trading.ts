@@ -115,6 +115,8 @@ interface State extends TradingData {
   dismissToast: (id: string) => void
   pushNotification: (title: string, body: string) => void
   markAllRead: () => void
+  deleteNotification: (id: string) => void
+  clearNotifications: () => void
   setChatConversations: (conversations: Conversation[]) => void
   setChatMessages: (conversationId: string, messages: ChatMessage[]) => void
   setSelectedChatId: (id: string | null) => void
@@ -172,6 +174,8 @@ export const useTrading = create<State>((set) => ({
       ],
     })),
   markAllRead: () => set((state) => ({ notifications: state.notifications.map((n) => ({ ...n, read: true })) })),
+  deleteNotification: (id: string) => set((state) => ({ notifications: state.notifications.filter((n) => n.id !== id) })),
+  clearNotifications: () => set({ notifications: [] }),
   setChatConversations: (chatConversations) => set({ chatConversations }),
   setChatMessages: (conversationId, messages) =>
     set((state) => ({ chatMessages: { ...state.chatMessages, [conversationId]: messages } })),

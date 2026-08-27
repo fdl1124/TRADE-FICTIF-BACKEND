@@ -474,6 +474,8 @@ function Shell({ children }: { children: React.ReactNode }) {
   const aiConfig = useTrading((s) => s.aiConfig)
   const notifications = useTrading((s) => s.notifications)
   const markAllRead = useTrading((s) => s.markAllRead)
+  const deleteNotification = useTrading((s) => s.deleteNotification)
+  const clearNotifications = useTrading((s) => s.clearNotifications)
   const [notifOpen, setNotifOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const mobileRef = useRef<HTMLDivElement>(null)
@@ -625,12 +627,21 @@ function Shell({ children }: { children: React.ReactNode }) {
       <Drawer open={notifOpen} onClose={() => setNotifOpen(false)} title="Notifications">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <span style={{ fontSize: 12, color: "var(--muted)" }}>{unread} non lus</span>
-          <button
-            onClick={markAllRead}
-            style={{ border: "1px solid var(--border)", background: "transparent", padding: "6px 10px", borderRadius: 6, fontSize: 12 }}
-          >
-            Tout marquer lu
-          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              onClick={markAllRead}
+              style={{ border: "1px solid var(--border)", background: "transparent", padding: "6px 10px", borderRadius: 6, fontSize: 12 }}
+            >
+              Tout marquer lu
+            </button>
+            <button
+              onClick={clearNotifications}
+              disabled={notifications.length === 0}
+              style={{ border: "1px solid var(--border)", background: "transparent", padding: "6px 10px", borderRadius: 6, fontSize: 12 }}
+            >
+              Tout effacer
+            </button>
+          </div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {notifications.length === 0 && <div className="empty" style={{ padding: 20 }}>Aucune notification</div>}
@@ -649,6 +660,14 @@ function Shell({ children }: { children: React.ReactNode }) {
                 <span style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}><RelativeTime iso={n.createdAt} /></span>
               </div>
               <p style={{ margin: "6px 0 0", color: "var(--muted)", fontSize: 12, lineHeight: 1.4 }}>{n.body}</p>
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+                <button
+                  onClick={() => deleteNotification(n.id)}
+                  style={{ border: "1px solid var(--border)", background: "transparent", padding: "4px 8px", borderRadius: 6, fontSize: 11 }}
+                >
+                  Supprimer
+                </button>
+              </div>
             </div>
           ))}
         </div>
