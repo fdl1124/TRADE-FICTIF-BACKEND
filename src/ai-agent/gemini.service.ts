@@ -6,6 +6,7 @@ import { GeminiKeyRing } from './gemini-key-ring';
 const GEMINI_INTERACTIONS_URL = 'https://generativelanguage.googleapis.com/v1beta/interactions';
 export const GEMINI_PRIMARY_MODEL = process.env.GEMINI_PRIMARY_MODEL || 'gemini-3.7-flash';
 export const GEMINI_FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-3.6-flash';
+export const GEMINI_SECONDARY_FALLBACK_MODEL = process.env.GEMINI_SECONDARY_FALLBACK_MODEL || 'gemini-2.5-flash';
 const PRIMARY_TIMEOUT_MS = 60_000;
 const FALLBACK_TIMEOUT_MS = 30_000;
 const MAX_KEYS = 10;
@@ -177,6 +178,7 @@ export class GeminiService {
     const attempts: Array<{ model: GeminiModelName; timeoutMs: number }> = [
       { model: GEMINI_PRIMARY_MODEL, timeoutMs: PRIMARY_TIMEOUT_MS },
       { model: GEMINI_FALLBACK_MODEL, timeoutMs: FALLBACK_TIMEOUT_MS },
+      { model: GEMINI_SECONDARY_FALLBACK_MODEL, timeoutMs: FALLBACK_TIMEOUT_MS },
     ];
 
     for (const attempt of attempts) {
@@ -291,7 +293,7 @@ export class GeminiService {
   }
 
   async *streamInteraction(request: GeminiStreamRequest): AsyncGenerator<GeminiStreamEvent> {
-    const attempts = [GEMINI_PRIMARY_MODEL];
+    const attempts = [GEMINI_PRIMARY_MODEL, GEMINI_FALLBACK_MODEL, GEMINI_SECONDARY_FALLBACK_MODEL];
     for (let attemptIndex = 0; attemptIndex < attempts.length; attemptIndex++) {
       const model = attempts[attemptIndex];
       let retried = false;
