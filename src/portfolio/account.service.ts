@@ -52,6 +52,18 @@ export class AccountService {
       sql: 'INSERT INTO accounts (id, user_id, balance, starting_balance, created_at) VALUES (?, ?, ?, ?, ?)',
       args: [accountId, user.uid, 10_000, 10_000, new Date().toISOString()],
     });
+    const defaultAgents: Array<[string, string, string]> = [
+      ['Analyse Technique', 'technical', 'medium'],
+      ['Sentiment & Actualites', 'news', 'low'],
+      ['Risque & Portefeuille', 'risk', 'high'],
+    ];
+    for (const [name, profile, thinkingLevel] of defaultAgents) {
+      await this.db.execute({
+        sql: `INSERT INTO ai_agents (id, account_id, name, profile, instructions, thinking_level, watched_symbols, max_position_size_percent, daily_loss_limit_percent, enabled, mode, circuit_breaker_active, circuit_breaker_reason, created_at)
+              VALUES (lower(hex(randomblob(16))), ?, ?, NULL, ?, '["BTCUSDT","ETHUSDT"]', 2, 3, 1, 'propose', 0, NULL, ?)`,
+        args: [accountId, name, profile, thinkingLevel, new Date().toISOString()],
+      });
+    }
     return accountId;
   }
 
