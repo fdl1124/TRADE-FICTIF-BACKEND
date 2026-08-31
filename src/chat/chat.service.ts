@@ -253,6 +253,10 @@ Answer in the same language as the user (French if they write in French). Be con
     let input: StreamInput = geminiInput as StreamInput;
     const thinkingParts: string[] = [];
     const toolSteps: Array<{ name: string; summary: string }> = [];
+    const hasUrl = /https?:\/\/[^\s<>"']+/i.test(options.content);
+    const toolsForChat: unknown[] = hasUrl
+      ? [{ type: 'google_search' }, { type: 'url_context' }]
+      : [...PLATFORM_TOOL_DECLARATIONS];
     const sourceUrls = new Set<string>();
     let orderProposal: OrderProposal | null = null;
     let failureMessage: string | null = null;
@@ -266,7 +270,7 @@ Answer in the same language as the user (French if they write in French). Be con
           systemInstruction,
           input: input as StreamInput,
           thinkingLevel,
-          tools: [...PLATFORM_TOOL_DECLARATIONS, { type: 'google_search' }, { type: 'url_context' }],
+          tools: toolsForChat,
           previousInteractionId: loop === 0 ? undefined : interactionId,
         })) {
           switch (event.kind) {
