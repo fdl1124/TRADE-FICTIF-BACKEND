@@ -55,6 +55,7 @@ import {
   updateAgent,
   createConversation,
   deleteConversation,
+  deleteAccount,
 } from "@/lib/api"
 import type { AgentInstance, ChatMessage, Conversation } from "@/lib/api"
 import { onAuthChange, signOutUser } from "@/lib/auth/client"
@@ -1773,7 +1774,10 @@ function SettingsPage() {
   const positions = useTrading((s) => s.positions)
   const decisions = useTrading((s) => s.decisions)
   const router = useRouter()
+  const pushToast = useTrading((s) => s.pushToast)
   const [confirmLogout, setConfirmLogout] = useState(false)
+  const [confirmDeleteAccount, setConfirmDeleteAccount] = useState(false)
+  const [deletingAccount, setDeletingAccount] = useState(false)
 
   function exportToCsv(filename: string, rows: Record<string, unknown>[]) {
     if (!rows || rows.length === 0) return
@@ -1821,13 +1825,50 @@ function SettingsPage() {
           <span className="eyebrow">SESSION</span>
           <h2>Déconnexion</h2>
           <p>Votre historique et votre compte de simulation restent conservés.</p>
-          {confirmLogout ? (
-            <ConfirmDialog title="Se déconnecter" body="Vous devrez vous reconnecter." onConfirm={async () => { await signOutUser(); router.push("/login") }} onCancel={() => setConfirmLogout(false)} />
-          ) : (
-            <button className="danger" onClick={() => setConfirmLogout(true)}>Se déconnecter</button>
-          )}
+          <button className="danger" onClick={() => setConfirmLogout(true)}>Se déconnecter</button>
+        </section>
+        <section className="panel danger-zone">
+          <span className="eyebrow">ZONE SENSIBLE</span>
+          <h2>Supprimer le compte</h2>
+          <p>Efface définitivement votre compte de simulation, vos positions, ordres, décisions, agents IA et conversations, puis votre identité de connexion. Action irréversible.</p>
+          <button className="danger" disabled={deletingAccount} onClick={() => setConfirmDeleteAccount(true)}>
+            {deletingAccount ? "Suppression…" : "Supprimer définitivement mon compte"}
+          </button>
         </section>
       </div>
+      <ConfirmDialog
+        open={confirmLogout}
+        title="Se déconnecter"
+        description="Vous devrez vous reconnecter. Votre historique de simulation est conservé."
+        confirmLabel="Se déconnecter"
+        tone="danger"
+        onConfirm={async () => {
+          setConfirmLogout(false)
+          await signOutUser()
+          router.push("/login")
+        }}
+        onCancel={() => setConfirmLogout(false)}
+      />
+      <ConfirmDialog
+        open={confirmDeleteAccount}
+        title="Supprimer définitivement le compte"
+        description="Tout sera effacé : solde simulé, positions, ordres, décisions, agents IA et conversations. Cette action est irréversible."
+        confirmLabel="Tout supprimer"
+        tone="danger"
+        onConfirm={async () => {
+          setConfirmDeleteAccount(false)
+          setDeletingAccount(true)
+          try {
+            await deleteAccount()
+            await signOutUser()
+            router.push("/login")
+          } catch {
+            pushToast("Suppression impossible, réessayez.", "error")
+            setDeletingAccount(false)
+          }
+        }}
+        onCancel={() => setConfirmDeleteAccount(false)}
+      />
     </>
   )
 }

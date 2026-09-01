@@ -210,7 +210,8 @@ async function request<T>(path: string, init: RequestInit | undefined, parse: (v
       ...init?.headers,
     },
   })
-  const payload: unknown = await response.json()
+  const rawBody = await response.text()
+  const payload: unknown = rawBody.length > 0 ? JSON.parse(rawBody) : {}
   if (!response.ok) {
     const value = payload as { error?: string; message?: string; details?: unknown }
     throw new TradingApiError(value.error ?? "UNKNOWN", value.message ?? "Erreur API", value.details)
@@ -526,6 +527,12 @@ export async function getMessages(conversationId: string): Promise<ChatMessage[]
   if (!MOCK) return request(`/api/chat/conversations/${encodeURIComponent(conversationId)}/messages`, undefined, (v) => v as ChatMessage[])
   await sleep()
   return [...(mockMessages[conversationId] ?? [])]
+}
+
+export async function deleteAccount(): Promise<{ deleted: true }> {
+  if (!MOCK) return request(`/api/account`, { method: "DELETE" }, () => ({ deleted: true }) as { deleted: true })
+  await sleep()
+  return { deleted: true }
 }
 
 export async function sendMessageStream(

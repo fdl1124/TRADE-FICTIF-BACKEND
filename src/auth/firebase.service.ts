@@ -46,4 +46,11 @@ export class FirebaseService implements OnModuleInit {
       throw ApiErrors.unauthorized('Invalid or expired Firebase ID token');
     }
   }
+
+  async deleteUser(uid: string): Promise<void> {
+    if (!this.auth) {
+      throw ApiErrors.unauthorized('Authentication service is not ready');
+    }
+    await this.auth.deleteUser(uid);
+  }
 }

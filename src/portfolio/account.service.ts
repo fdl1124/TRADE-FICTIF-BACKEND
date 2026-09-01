@@ -80,6 +80,48 @@ export class AccountService {
     }
   }
 
+  async deleteAccountData(accountId: string): Promise<void> {
+    const conversations = await this.db.execute({
+      sql: 'SELECT id FROM chat_conversations WHERE account_id = ?',
+      args: [accountId],
+    });
+    for (const row of conversations.rows) {
+      await this.db.execute({
+        sql: 'DELETE FROM chat_messages WHERE conversation_id = ?',
+        args: [String(row.id)],
+      });
+    }
+    const tablesByAccount: string[] = [
+      'chat_conversations',
+      'ai_decision_outcomes',
+      'ai_decisions',
+      'ai_agents',
+      'positions',
+      'orders',
+    ];
+    for (const table of tablesByAccount) {
+      await this.db.execute({
+        sql: `DELETE FROM ${table} WHERE account_id = ?`,
+        args: [accountId],
+      });
+    }
+    await this.db.execute({
+      sql: 'DELETE FROM ai_agent_configs WHERE account_id = ?',
+      args: [accountId],
+    });
+    await this.db.execute({
+      sql: 'DELETE FROM accounts WHERE id = ?',
+      args: [accountId],
+    });
+  }
+
+  async deleteUserIdRow(uid: string): Promise<void> {
+    await this.db.execute({
+      sql: 'DELETE FROM users WHERE id = ?',
+      args: [uid],
+    });
+  }
+
   async getAccount(accountId: string): Promise<Account> {
     const result = await this.db.execute({
       sql: 'SELECT id, user_id, balance, starting_balance, created_at FROM accounts WHERE id = ?',
