@@ -152,6 +152,11 @@ function keyFailureReason(status: number): 'auth' | 'quota' {
   return status === 429 ? 'quota' : 'auth';
 }
 
+function normalizeThinkingLevel(model: string, level: ThinkingLevel): ThinkingLevel {
+  if (level === 'medium' && model.startsWith('gemini-2.5')) return 'low';
+  return level;
+}
+
 function describeFailure(model: string, keyIndex: number, error: unknown): string {
   const message =
     error instanceof GeminiHttpError && error.body
@@ -273,7 +278,7 @@ export class GeminiService {
             schema: DECISION_JSON_SCHEMA,
           },
           generation_config: {
-            thinking_level: request.thinkingLevel,
+            thinking_level: normalizeThinkingLevel(attempt.model, request.thinkingLevel),
             thinking_summaries: 'auto',
           },
           store: false,
@@ -328,7 +333,7 @@ export class GeminiService {
               input: request.input,
               system_instruction: request.systemInstruction,
               generation_config: {
-                thinking_level: request.thinkingLevel,
+                thinking_level: normalizeThinkingLevel(model, request.thinkingLevel),
                 thinking_summaries: 'auto',
               },
               store: false,
