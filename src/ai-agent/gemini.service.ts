@@ -7,7 +7,6 @@ const GEMINI_INTERACTIONS_URL = 'https://generativelanguage.googleapis.com/v1bet
 export const GEMINI_PRIMARY_MODEL = process.env.GEMINI_PRIMARY_MODEL || 'gemini-3.7-flash';
 export const GEMINI_FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-3.6-flash';
 export const GEMINI_SECONDARY_FALLBACK_MODEL = process.env.GEMINI_SECONDARY_FALLBACK_MODEL || 'gemini-2.5-flash';
-export const GEMINI_DECISION_MODEL = process.env.GEMINI_DECISION_MODEL || 'gemini-3.6-flash';
 const PRIMARY_TIMEOUT_MS = 60_000;
 const FALLBACK_TIMEOUT_MS = 30_000;
 const MAX_KEYS = 10;
@@ -189,36 +188,38 @@ export class GeminiService {
   async decide(request: GeminiDecisionRequest): Promise<GeminiDecisionResult> {
     const failures: string[] = [];
     const attempts: Array<{ model: GeminiModelName; timeoutMs: number }> = [
-      { model: GEMINI_DECISION_MODEL, timeoutMs: FALLBACK_TIMEOUT_MS },
-      { model: GEMINI_SECONDARY_FALLBACK_MODEL, timeoutMs: FALLBACK_TIMEOUT_MS },
       { model: GEMINI_PRIMARY_MODEL, timeoutMs: PRIMARY_TIMEOUT_MS },
+      { model: GEMINI_FALLBACK_MODEL, timeoutMs: FALLBACK_TIMEOUT_MS },
     ];
+    const MAX_KEY_TRIES_PER_MODEL = 3;
 
     for (const attempt of attempts) {
       let keyTries = 0;
       let onlyKeyFailures = true;
 
-      while (keyTries < this.ring.size) {
+      while (keyTries < MAX_KEY_TRIES_PER_MODEL) {
         const keyIndex = this.ring.currentIndexValue();
         try {
           return await this.callModel(attempt.model, request, attempt.timeoutMs);
         } catch (error) {
           failures.push(describeFailure(attempt.model, keyIndex, error));
-          if (error instanceof GeminiHttpError && KEY_FAILURE_STATUSES.has(error.status)) {
-            if (error.status === 429) {
+          const isKeyFailure = error instanceof GeminiHttpError && KEY_FAILURE_STATUSES.has(error.status);
+          const isTimeout = error instanceof Error && error.message.startsWith('timeout after');
+          if (isKeyFailure) {
+            this.ring.markFailed(keyIndex, keyFailureReason(error.status));
+          }
+          if (isKeyFailure || isTimeout) {
+            keyTries += 1;
+            if (keyTries >= MAX_KEY_TRIES_PER_MODEL || this.ring.size <= 1 || !this.ring.rotateToNextAvailable()) {
               this.logger.warn(
-                `${attempt.model} surcharge (HTTP 429) sur la clé #${keyIndex + 1}, bascule sur le modele de repli`,
+                `${attempt.model} abandonne apres ${keyTries} cle(s), passage au modele suivant`,
               );
               onlyKeyFailures = false;
               break;
             }
-            this.ring.markFailed(keyIndex, keyFailureReason(error.status));
-            if (this.ring.size > 1 && this.ring.rotateToNextAvailable()) {
-              this.logger.warn(
-                `Gemini key #${keyIndex + 1} rejected (HTTP ${error.status}) on ${attempt.model}, rotating to key #${this.ring.currentIndexValue() + 1}`,
-              );
-            }
-            keyTries += 1;
+            this.logger.warn(
+              `${attempt.model} cle #${keyIndex + 1} en echec (${isTimeout ? 'timeout' : 'HTTP ' + (error as GeminiHttpError).status}), essai de la cle suivante`,
+            );
             continue;
           }
           onlyKeyFailures = false;
