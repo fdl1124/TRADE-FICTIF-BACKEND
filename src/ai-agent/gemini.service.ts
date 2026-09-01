@@ -279,7 +279,7 @@ export class GeminiService {
             schema: DECISION_JSON_SCHEMA,
           },
           generation_config: {
-            thinking_level: normalizeThinkingLevel(attempt.model, request.thinkingLevel),
+            thinking_level: normalizeThinkingLevel(model, request.thinkingLevel),
             thinking_summaries: 'auto',
           },
           store: false,
