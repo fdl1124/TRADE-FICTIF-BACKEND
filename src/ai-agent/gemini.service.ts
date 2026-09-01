@@ -153,7 +153,12 @@ function keyFailureReason(status: number): 'auth' | 'quota' {
 }
 
 function describeFailure(model: string, keyIndex: number, error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
+  const message =
+    error instanceof GeminiHttpError && error.body
+      ? `${error.message} ${error.body}`
+      : error instanceof Error
+        ? error.message
+        : String(error);
   return `${model} key#${keyIndex + 1}: ${message}`;
 }
 
