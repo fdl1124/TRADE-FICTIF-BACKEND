@@ -217,11 +217,7 @@ export class GeminiService {
             continue;
           }
           onlyKeyFailures = false;
-          this.logger.warn(
-            `${attempt.model} failed on key #${keyIndex + 1}: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          );
+          this.logger.warn(`${attempt.model} failed on key #${keyIndex + 1}: ${describeFailure(attempt.model, keyIndex, error)}`);
           break;
         }
       }
