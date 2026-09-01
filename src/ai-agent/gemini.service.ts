@@ -191,34 +191,51 @@ export class GeminiService {
       { model: GEMINI_PRIMARY_MODEL, timeoutMs: PRIMARY_TIMEOUT_MS },
       { model: GEMINI_FALLBACK_MODEL, timeoutMs: FALLBACK_TIMEOUT_MS },
     ];
-    const MAX_KEY_TRIES_PER_MODEL = 3;
+    const MAX_TIMEOUT_TRIES_PER_MODEL = 2;
 
     for (const attempt of attempts) {
-      let keyTries = 0;
+      let fastTries = 0;
+      let timeoutTries = 0;
+      let totalTries = 0;
       let onlyKeyFailures = true;
 
-      while (keyTries < MAX_KEY_TRIES_PER_MODEL) {
+      while (totalTries < this.ring.size) {
         const keyIndex = this.ring.currentIndexValue();
         try {
           return await this.callModel(attempt.model, request, attempt.timeoutMs);
         } catch (error) {
+          totalTries += 1;
           failures.push(describeFailure(attempt.model, keyIndex, error));
           const isKeyFailure = error instanceof GeminiHttpError && KEY_FAILURE_STATUSES.has(error.status);
           const isTimeout = error instanceof Error && error.message.startsWith('timeout after');
           if (isKeyFailure) {
             this.ring.markFailed(keyIndex, keyFailureReason(error.status));
           }
-          if (isKeyFailure || isTimeout) {
-            keyTries += 1;
-            if (keyTries >= MAX_KEY_TRIES_PER_MODEL || this.ring.size <= 1 || !this.ring.rotateToNextAvailable()) {
+          if (isKeyFailure) {
+            fastTries += 1;
+            if (this.ring.size <= 1 || !this.ring.rotateToNextAvailable()) {
               this.logger.warn(
-                `${attempt.model} abandonne apres ${keyTries} cle(s), passage au modele suivant`,
+                `${attempt.model} abandonne apres ${fastTries} cle(s) en echec HTTP, passage au modele suivant`,
               );
               onlyKeyFailures = false;
               break;
             }
             this.logger.warn(
-              `${attempt.model} cle #${keyIndex + 1} en echec (${isTimeout ? 'timeout' : 'HTTP ' + (error as GeminiHttpError).status}), essai de la cle suivante`,
+              `${attempt.model} cle #${keyIndex + 1} rejetee (HTTP ${(error as GeminiHttpError).status}), essai de la cle suivante`,
+            );
+            continue;
+          }
+          if (isTimeout) {
+            timeoutTries += 1;
+            if (timeoutTries >= MAX_TIMEOUT_TRIES_PER_MODEL || this.ring.size <= 1 || !this.ring.rotateToNextAvailable()) {
+              this.logger.warn(
+                `${attempt.model} abandonne apres ${timeoutTries} timeout(s), passage au modele suivant`,
+              );
+              onlyKeyFailures = false;
+              break;
+            }
+            this.logger.warn(
+              `${attempt.model} cle #${keyIndex + 1} en timeout, essai de la cle suivante`,
             );
             continue;
           }
@@ -442,21 +459,19 @@ export class GeminiService {
                 ? error.message
                 : String(error);
           if (error instanceof GeminiHttpError && KEY_FAILURE_STATUSES.has(error.status)) {
-            if (error.status === 429) {
-              this.logger.warn(`${model} surcharge (HTTP 429) pendant le stream sur la clé #${keyIndex + 1}`);
-              if (attemptIndex < attempts.length - 1) {
-                break;
-              }
-              yield { kind: 'failed', message: 'Modele Gemini en forte demande, reessaie dans un instant' };
-              return;
-            }
             this.ring.markFailed(keyIndex, keyFailureReason(error.status));
             if (this.ring.size > 1 && this.ring.rotateToNextAvailable()) {
               this.logger.warn(
-                `Gemini key #${keyIndex + 1} rejected during stream (HTTP ${error.status}), rotating to key #${this.ring.currentIndexValue() + 1}`,
+                `${model} cle #${keyIndex + 1} rejetee pendant le stream (HTTP ${error.status}), essai de la cle suivante`,
               );
               continue;
             }
+            if (attemptIndex < attempts.length - 1) {
+              this.logger.warn(`${model} toutes les cles ont echoue (HTTP ${error.status}), passage au modele suivant`);
+              break;
+            }
+            yield { kind: 'failed', message: 'Toutes les cles Gemini saturent pour ce modele, reessaie dans un instant' };
+            return;
           }
           if (attemptIndex < attempts.length - 1) {
             this.logger.warn(`Streaming with ${model} failed: ${message}, trying next model`);
