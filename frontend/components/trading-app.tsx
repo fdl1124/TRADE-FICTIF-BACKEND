@@ -709,7 +709,7 @@ function Dashboard() {
   return (
     <>
       <SectionHead
-        eyebrow="VOTRE PORTFUEILLE SIMULÉ"
+        eyebrow="VOTRE PORTEFEUILLE SIMULÉ"
         title="Vue d’ensemble"
         copy="Votre exposition, vos risques et vos décisions — sans embellissement."
         action={
