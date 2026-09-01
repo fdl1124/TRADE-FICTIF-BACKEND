@@ -95,8 +95,10 @@ interface InteractionResponse {
 }
 
 class GeminiHttpError extends Error {
-  constructor(readonly status: number) {
+  body: string;
+  constructor(readonly status: number, body = '') {
     super(`HTTP ${status}`);
+    this.body = body.slice(0, 300);
   }
 }
 
@@ -279,7 +281,8 @@ export class GeminiService {
         signal: controller.signal,
       });
       if (!response.ok) {
-        throw new GeminiHttpError(response.status);
+        const errBody = await response.text().catch(() => '');
+        throw new GeminiHttpError(response.status, errBody);
       }
       const json = (await response.json()) as InteractionResponse;
       return this.extractResult(model, json);
@@ -337,7 +340,8 @@ export class GeminiService {
             signal: controller.signal,
           });
           if (!response.ok || !response.body) {
-            throw new GeminiHttpError(response.status);
+            const errBody = await response.text().catch(() => '');
+            throw new GeminiHttpError(response.status, errBody);
           }
           const decoder = new TextDecoder();
           let buffer = '';
@@ -424,7 +428,12 @@ export class GeminiService {
         } catch (error) {
           if (timer) clearTimeout(timer);
           timer = null;
-          const message = error instanceof Error ? error.message : String(error);
+          const message =
+            error instanceof GeminiHttpError && error.body
+              ? `${error.message} ${error.body}`
+              : error instanceof Error
+                ? error.message
+                : String(error);
           if (error instanceof GeminiHttpError && KEY_FAILURE_STATUSES.has(error.status)) {
             if (error.status === 429) {
               this.logger.warn(`${model} surcharge (HTTP 429) pendant le stream sur la clé #${keyIndex + 1}`);
