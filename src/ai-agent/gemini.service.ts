@@ -239,7 +239,6 @@ export class GeminiService {
         continue;
       }
       let timeoutTries = 0;
-      let rateLimitWaits = 0;
       let keyVisits = 0;
       let onlyKeyFailures = true;
 
@@ -268,26 +267,22 @@ export class GeminiService {
           }
 
           if (isRateLimited) {
-            const delayMs = parseRetryDelayMs(httpError.body ?? '');
-            if (
-              delayMs !== null &&
-              delayMs <= 25_000 &&
-              rateLimitWaits < 2 &&
-              Date.now() + delayMs + attempt.timeoutMs <= deadline
-            ) {
-              rateLimitWaits += 1;
+            // Les cles peuvent repartir le quota par projet : on met la cle courante
+            // au repos (60s) et on essaie une autre cle, eventuellement d'un autre projet.
+            this.ring.markFailed(keyIndex, 'quota');
+            if (this.ring.size <= 1 || !this.ring.rotateToNextAvailable()) {
+              const cooldownMs = Math.min(parseRetryDelayMs(httpError.body ?? '') ?? 45_000, 600_000);
+              this.modelCooldownUntil.set(attempt.model, Date.now() + cooldownMs);
               this.logger.warn(
-                `${attempt.model} limite de debit (429), attente de ${Math.round(delayMs)}ms puis nouvelle tentative`,
+                `${attempt.model} quota atteint sur toutes les cles (429), pause modele de ${Math.round(cooldownMs / 1000)}s`,
               );
-              await sleep(delayMs);
-              continue;
+              break;
             }
-            const cooldownMs = Math.min(delayMs ?? 45_000, 600_000);
-            this.modelCooldownUntil.set(attempt.model, Date.now() + cooldownMs);
             this.logger.warn(
-              `${attempt.model} quota atteint (429), pause de ${Math.round(cooldownMs / 1000)}s sur ce modele, passage au modele suivant`,
+              `${attempt.model} cle #${keyIndex + 1} en quota (429), essai de la cle suivante`,
             );
-            break;
+            keyVisits += 1;
+            continue;
           }
 
           if (isTimeout) {
@@ -366,6 +361,10 @@ export class GeminiService {
         throw new GeminiHttpError(response.status, errBody);
       }
       const json = (await response.json()) as InteractionResponse;
+      // Repartition de charge : la requete suivante partira sur la cle suivante.
+      if (this.ring.size > 1) {
+        this.ring.rotateToNextAvailable();
+      }
       return this.extractResult(model, json);
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
@@ -387,6 +386,7 @@ export class GeminiService {
       }
       let retried = false;
       let waited429 = false;
+      let keyRotations = 0;
       let attempt = 0;
       while (attempt <= this.ring.size && !retried) {
         const keyIndex = this.ring.currentIndexValue();
@@ -527,17 +527,20 @@ export class GeminiService {
               if (parsed !== null && parsed <= 25_000) {
                 waited429 = true;
                 this.logger.warn(
-                  `${model} limite de debit (429) pendant le stream sur la cle #${keyIndex + 1}, attente ${Math.round(parsed / 1000)}s puis nouvelle tentative`,
+                  `${model} limite de debit (429) pendant le stream sur la cle #${keyIndex + 1}, attente ${Math.round(parsed)}ms puis nouvelle tentative`,
                 );
                 await sleep(parsed);
                 continue;
               }
             }
-            const cooldownMs = Math.min(parseRetryDelayMs(error.body ?? '') ?? 120_000, 600_000);
-            this.modelCooldownUntil.set(model, Date.now() + cooldownMs);
-            this.logger.warn(
-              `${model} quota stream atteint (429), pause de ${Math.round(cooldownMs / 1000)}s sur ce modele, passage au modele suivant`,
-            );
+            this.ring.markFailed(keyIndex, 'quota');
+            if (this.ring.size > 1 && this.ring.rotateToNextAvailable() && keyRotations < this.ring.size) {
+              keyRotations += 1;
+              this.logger.warn(
+                `${model} cle #${keyIndex + 1} en quota (429) pendant le stream, essai de la cle suivante`,
+              );
+              continue;
+            }
             break;
           }
           if (error instanceof GeminiHttpError && KEY_FAILURE_STATUSES.has(error.status)) {
