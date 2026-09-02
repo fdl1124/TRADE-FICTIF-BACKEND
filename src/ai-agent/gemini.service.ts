@@ -13,7 +13,9 @@ const FALLBACK_TIMEOUT_MS = 30_000;
 // avec "retry in Xs" — on attend plutot que de bruler toutes les cles en rafale.
 const PRIMARY_BUDGET_MS = 150_000;
 const FALLBACK_BUDGET_MS = 60_000;
-const MAX_RATE_LIMIT_WAITS_PER_MODEL = 5;
+const MAX_TIMEOUT_TRIES_PER_MODEL = 2;
+// Pacage global : jamais plus d'une requete Gemini toutes les 3,5 s (limite gratuite ~20/min).
+const MIN_REQUEST_GAP_MS = 3_500;
 const MAX_KEYS = 10;
 const KEY_FAILURE_STATUSES: ReadonlySet<number> = new Set([401, 403, 429]);
 const STREAM_IDLE_TIMEOUT_MS = 90_000;
@@ -192,6 +194,8 @@ function describeFailure(model: string, keyIndex: number, error: unknown): strin
 export class GeminiService {
   private readonly logger = new Logger(GeminiService.name);
   private readonly ring: GeminiKeyRing;
+  private readonly modelCooldownUntil = new Map<string, number>();
+  private lastRequestAt = 0;
 
   constructor(config: ConfigService) {
     const multi = (config.get<string>('GEMINI_API_KEYS') ?? '')
@@ -207,18 +211,33 @@ export class GeminiService {
     this.logger.log(`Gemini client initialized with ${this.ring.size} API key(s)`);
   }
 
+  private async pace(): Promise<void> {
+    const wait = this.lastRequestAt + MIN_REQUEST_GAP_MS - Date.now();
+    if (wait > 0) {
+      await sleep(wait);
+    }
+    this.lastRequestAt = Date.now();
+  }
+
+  private isModelCoolingDown(model: GeminiModelName): boolean {
+    const until = this.modelCooldownUntil.get(model) ?? 0;
+    return Date.now() < until;
+  }
+
   async decide(request: GeminiDecisionRequest): Promise<GeminiDecisionResult> {
     const failures: string[] = [];
     const attempts: Array<{ model: GeminiModelName; timeoutMs: number; budgetMs: number }> = [
       { model: GEMINI_PRIMARY_MODEL, timeoutMs: PRIMARY_TIMEOUT_MS, budgetMs: PRIMARY_BUDGET_MS },
       { model: GEMINI_FALLBACK_MODEL, timeoutMs: FALLBACK_TIMEOUT_MS, budgetMs: FALLBACK_BUDGET_MS },
     ];
-    const MAX_TIMEOUT_TRIES_PER_MODEL = 2;
 
     for (const attempt of attempts) {
       const deadline = Date.now() + attempt.budgetMs;
+      if (this.isModelCoolingDown(attempt.model)) {
+        failures.push(`${attempt.model}: quota model en cooldown (${Math.round(((this.modelCooldownUntil.get(attempt.model) ?? 0) - Date.now()) / 1000)}s restantes)`);
+        continue;
+      }
       let timeoutTries = 0;
-      let rateLimitWaits = 0;
       let keyVisits = 0;
       let onlyKeyFailures = true;
 
@@ -247,30 +266,13 @@ export class GeminiService {
           }
 
           if (isRateLimited) {
-            const waitMs = parseRetryDelayMs(httpError.body ?? '');
-            if (
-              waitMs !== null &&
-              rateLimitWaits < MAX_RATE_LIMIT_WAITS_PER_MODEL &&
-              Date.now() + waitMs <= deadline
-            ) {
-              rateLimitWaits += 1;
-              this.logger.warn(
-                `${attempt.model} cle #${keyIndex + 1} limite de debit (429), nouvelle tentative dans ${Math.round(waitMs / 1000)}s sur la meme cle`,
-              );
-              await sleep(waitMs);
-              continue;
-            }
-            this.ring.markFailed(keyIndex, 'quota');
-            if (this.ring.size <= 1 || !this.ring.rotateToNextAvailable()) {
-              this.logger.warn(`${attempt.model} quota sature sur toutes les cles disponibles, passage au modele suivant`);
-              onlyKeyFailures = false;
-              break;
-            }
+            const delayMs = parseRetryDelayMs(httpError.body ?? '') ?? 45_000;
+            const cooldownMs = Math.min(delayMs, 600_000);
+            this.modelCooldownUntil.set(attempt.model, Date.now() + cooldownMs);
             this.logger.warn(
-              `${attempt.model} cle #${keyIndex + 1} en quota (429 sans delai exploitable), essai de la cle suivante`,
+              `${attempt.model} quota atteint (429), pause de ${Math.round(cooldownMs / 1000)}s sur ce modele, passage au modele suivant`,
             );
-            keyVisits += 1;
-            continue;
+            break;
           }
 
           if (isTimeout) {
@@ -312,6 +314,7 @@ export class GeminiService {
     request: GeminiDecisionRequest,
     timeoutMs: number,
   ): Promise<GeminiDecisionResult> {
+    await this.pace();
     const apiKey = this.ring.currentKey();
     if (apiKey === null) {
       throw new Error('no Gemini API key configured');
@@ -363,6 +366,10 @@ export class GeminiService {
     const attempts = [GEMINI_PRIMARY_MODEL, GEMINI_FALLBACK_MODEL, GEMINI_SECONDARY_FALLBACK_MODEL];
     for (let attemptIndex = 0; attemptIndex < attempts.length; attemptIndex++) {
       const model = attempts[attemptIndex];
+      if (this.isModelCoolingDown(model)) {
+        this.logger.warn(`${model} en cooldown quota, passage au modele suivant pour le stream`);
+        continue;
+      }
       let retried = false;
       let waited429 = false;
       let attempt = 0;
@@ -380,6 +387,7 @@ export class GeminiService {
           timer = setTimeout(() => controller.abort(), STREAM_IDLE_TIMEOUT_MS);
         };
         try {
+          await this.pace();
           const response = await fetch(GEMINI_INTERACTIONS_URL, {
             method: 'POST',
             headers: {
@@ -498,14 +506,24 @@ export class GeminiService {
               : error instanceof Error
                 ? error.message
                 : String(error);
-          if (error instanceof GeminiHttpError && error.status === 429 && !waited429) {
-            const waitMs = Math.min(parseRetryDelayMs(error.body ?? '') ?? 15_000, 20_000);
-            waited429 = true;
+          if (error instanceof GeminiHttpError && error.status === 429) {
+            if (!waited429) {
+              const parsed = parseRetryDelayMs(error.body ?? '');
+              if (parsed !== null && parsed <= 25_000) {
+                waited429 = true;
+                this.logger.warn(
+                  `${model} limite de debit (429) pendant le stream sur la cle #${keyIndex + 1}, attente ${Math.round(parsed / 1000)}s puis nouvelle tentative`,
+                );
+                await sleep(parsed);
+                continue;
+              }
+            }
+            const cooldownMs = Math.min(parseRetryDelayMs(error.body ?? '') ?? 120_000, 600_000);
+            this.modelCooldownUntil.set(model, Date.now() + cooldownMs);
             this.logger.warn(
-              `${model} limite de debit (429) pendant le stream sur la cle #${keyIndex + 1}, attente ${Math.round(waitMs / 1000)}s puis nouvelle tentative`,
+              `${model} quota stream atteint (429), pause de ${Math.round(cooldownMs / 1000)}s sur ce modele, passage au modele suivant`,
             );
-            await sleep(waitMs);
-            continue;
+            break;
           }
           if (error instanceof GeminiHttpError && KEY_FAILURE_STATUSES.has(error.status)) {
             this.ring.markFailed(keyIndex, keyFailureReason(error.status));
