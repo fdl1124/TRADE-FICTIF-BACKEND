@@ -158,17 +158,18 @@ function keyFailureReason(status: number): 'auth' | 'quota' {
   return status === 429 ? 'quota' : 'auth';
 }
 
-// Extrait le delai "Please retry in 15.4s" du corps d'une erreur 429.
+// Extrait le delai "Please retry in 15.4s" ou "retry in 605.081258ms" du corps d'une erreur 429.
 function parseRetryDelayMs(body: string): number | null {
-  const match = /retry (?:in|after) ([0-9]+(?:\.[0-9]+)?)s/i.exec(body);
+  const match = /retry (?:in|after) ([0-9]+(?:\.[0-9]+)?)\s*(ms|s)\b/i.exec(body);
   if (!match) {
     return null;
   }
-  const seconds = Number.parseFloat(match[1]);
-  if (!Number.isFinite(seconds) || seconds <= 0) {
+  const value = Number.parseFloat(match[1]);
+  if (!Number.isFinite(value) || value <= 0) {
     return null;
   }
-  return Math.min(Math.ceil(seconds * 1000) + 1_000, 120_000);
+  const ms = match[2].toLowerCase() === 'ms' ? value : value * 1000;
+  return Math.min(Math.ceil(ms) + 250, 120_000);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -238,6 +239,7 @@ export class GeminiService {
         continue;
       }
       let timeoutTries = 0;
+      let rateLimitWaits = 0;
       let keyVisits = 0;
       let onlyKeyFailures = true;
 
@@ -266,8 +268,21 @@ export class GeminiService {
           }
 
           if (isRateLimited) {
-            const delayMs = parseRetryDelayMs(httpError.body ?? '') ?? 45_000;
-            const cooldownMs = Math.min(delayMs, 600_000);
+            const delayMs = parseRetryDelayMs(httpError.body ?? '');
+            if (
+              delayMs !== null &&
+              delayMs <= 25_000 &&
+              rateLimitWaits < 3 &&
+              Date.now() + delayMs + attempt.timeoutMs <= deadline
+            ) {
+              rateLimitWaits += 1;
+              this.logger.warn(
+                `${attempt.model} limite de debit (429), attente de ${Math.round(delayMs)}ms puis nouvelle tentative`,
+              );
+              await sleep(delayMs);
+              continue;
+            }
+            const cooldownMs = Math.min(delayMs ?? 45_000, 600_000);
             this.modelCooldownUntil.set(attempt.model, Date.now() + cooldownMs);
             this.logger.warn(
               `${attempt.model} quota atteint (429), pause de ${Math.round(cooldownMs / 1000)}s sur ce modele, passage au modele suivant`,
