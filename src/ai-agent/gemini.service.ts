@@ -15,7 +15,7 @@ const PRIMARY_BUDGET_MS = 150_000;
 const FALLBACK_BUDGET_MS = 60_000;
 const MAX_TIMEOUT_TRIES_PER_MODEL = 2;
 // Pacage global : jamais plus d'une requete Gemini toutes les 3,5 s (limite gratuite ~20/min).
-const MIN_REQUEST_GAP_MS = 3_500;
+const MIN_REQUEST_GAP_MS = 5_000;
 const MAX_KEYS = 10;
 const KEY_FAILURE_STATUSES: ReadonlySet<number> = new Set([401, 403, 429]);
 const STREAM_IDLE_TIMEOUT_MS = 90_000;
@@ -272,7 +272,7 @@ export class GeminiService {
             if (
               delayMs !== null &&
               delayMs <= 25_000 &&
-              rateLimitWaits < 3 &&
+              rateLimitWaits < 2 &&
               Date.now() + delayMs + attempt.timeoutMs <= deadline
             ) {
               rateLimitWaits += 1;
