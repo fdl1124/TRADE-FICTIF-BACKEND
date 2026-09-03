@@ -8,7 +8,7 @@ export const GEMINI_PRIMARY_MODEL = process.env.GEMINI_PRIMARY_MODEL || 'gemini-
 export const GEMINI_FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-3.6-flash';
 export const GEMINI_SECONDARY_FALLBACK_MODEL = process.env.GEMINI_SECONDARY_FALLBACK_MODEL || 'gemini-2.5-flash';
 const PRIMARY_TIMEOUT_MS = 60_000;
-const FALLBACK_TIMEOUT_MS = 30_000;
+const FALLBACK_TIMEOUT_MS = 45_000;
 // Budget global par modele : le 429 est une limite de debit (ex. 20 req/min)
 // avec "retry in Xs" — on attend plutot que de bruler toutes les cles en rafale.
 const PRIMARY_BUDGET_MS = 150_000;
