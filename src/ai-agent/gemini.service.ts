@@ -419,13 +419,16 @@ export class GeminiService {
                 thinking_level: normalizeThinkingLevel(model, request.thinkingLevel),
                 thinking_summaries: 'auto',
               },
-              // store:false renvoie un id d'interaction VIDE pendant le flux :
-              // la boucle function calling a besoin de l'id reel (store par defaut).
+              // Tour de reprise apres un outil : previous_response_id + function_result
+              // dans input, SANS outils (la doc les interdit avec previous_*_id).
               stream: true,
               ...(request.previousInteractionId
-                ? { previous_interaction_id: request.previousInteractionId }
-                : {}),
-              ...(request.tools && request.tools.length > 0 ? { tools: request.tools } : {}),
+                ? {
+                    previous_response_id: request.previousInteractionId,
+                  }
+                : {
+                    ...(request.tools && request.tools.length > 0 ? { tools: request.tools } : {}),
+                  }),
             }),
             signal: controller.signal,
           });
