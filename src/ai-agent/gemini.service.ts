@@ -419,7 +419,8 @@ export class GeminiService {
                 thinking_level: normalizeThinkingLevel(model, request.thinkingLevel),
                 thinking_summaries: 'auto',
               },
-              store: false,
+              // store:false renvoie un id d'interaction VIDE pendant le flux :
+              // la boucle function calling a besoin de l'id reel (store par defaut).
               stream: true,
               ...(request.previousInteractionId
                 ? { previous_interaction_id: request.previousInteractionId }
