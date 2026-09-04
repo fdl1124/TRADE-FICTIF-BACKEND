@@ -304,6 +304,10 @@ Answer in the same language as the user (French if they write in French). Be con
               };
               break;
             }
+            case 'interaction_id': {
+              interactionId = event.interactionId;
+              break;
+            }
             case 'completed': {
               gotCompleted = true;
               if (event.interactionId) {

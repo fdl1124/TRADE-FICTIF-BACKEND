@@ -70,6 +70,7 @@ export type GeminiStreamEvent =
   | { kind: 'thought_delta'; text: string }
   | { kind: 'function_call'; callId: string; name: string; argumentsJson: string }
   | { kind: 'requires_action' }
+  | { kind: 'interaction_id'; interactionId: string }
   | { kind: 'completed'; interactionId: string }
   | { kind: 'failed'; message: string };
 
@@ -433,6 +434,7 @@ export class GeminiService {
           const decoder = new TextDecoder();
           let buffer = '';
           let sawRequiresAction = false;
+          let interactionIdSent = false;
           let currentStep: { index: number; type: string; name?: string; callId?: string } | null = null;
           let argumentBuffer = '';
           for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
@@ -456,6 +458,18 @@ export class GeminiService {
                 continue;
               }
               const eventType = event.event_type ?? '';
+              const wireInteractionId =
+                event.interaction && typeof event.interaction.id === 'string'
+                  ? event.interaction.id
+                  : typeof event.interaction_id === 'string'
+                    ? event.interaction_id
+                    : '';
+              if (wireInteractionId && !interactionIdSent && eventType !== 'interaction.completed') {
+                // L'id arrive des le premier evenement (interaction.created) :
+                // indispensable pour enchainer les function calls.
+                interactionIdSent = true;
+                yield { kind: 'interaction_id', interactionId: wireInteractionId };
+              }
               if (eventType === 'step.start') {
                 currentStep = {
                   index: Number(event.index ?? 0),
@@ -493,13 +507,7 @@ export class GeminiService {
                 sawRequiresAction = true;
                 yield { kind: 'requires_action' };
               } else if (eventType === 'interaction.completed') {
-                const interactionId =
-                  event.interaction && typeof event.interaction.id === 'string'
-                    ? event.interaction.id
-                    : typeof event.interaction_id === 'string'
-                      ? event.interaction_id
-                      : '';
-                yield { kind: 'completed', interactionId };
+                yield { kind: 'completed', interactionId: wireInteractionId };
                 return;
               } else if (eventType === 'error') {
                 const message =
