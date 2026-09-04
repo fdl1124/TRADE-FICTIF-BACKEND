@@ -419,12 +419,12 @@ export class GeminiService {
                 thinking_level: normalizeThinkingLevel(model, request.thinkingLevel),
                 thinking_summaries: 'auto',
               },
-              // Tour de reprise apres un outil : previous_response_id + function_result
+              // Tour de reprise apres un outil : previous_interaction_id + function_result
               // dans input, SANS outils (la doc les interdit avec previous_*_id).
               stream: true,
               ...(request.previousInteractionId
                 ? {
-                    previous_response_id: request.previousInteractionId,
+                    previous_interaction_id: request.previousInteractionId,
                   }
                 : {
                     ...(request.tools && request.tools.length > 0 ? { tools: request.tools } : {}),
