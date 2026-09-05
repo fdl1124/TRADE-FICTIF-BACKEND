@@ -83,6 +83,7 @@ const TOOL_LABELS: Record<string, string> = {
   get_order_history: "Historique des ordres",
   search_assets: "Recherche d'actifs",
   get_chart_data: "Analyse du graphique",
+  get_indicators: "Indicateurs techniques",
   propose_order: "Proposition d'ordre",
   google_search: "Recherche web",
   url_context: "Analyse du lien",
