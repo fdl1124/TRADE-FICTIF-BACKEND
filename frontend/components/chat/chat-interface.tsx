@@ -147,6 +147,7 @@ export function ChatInterface() {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const loadedConvRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)")
@@ -186,13 +187,14 @@ export function ChatInterface() {
 
   useEffect(() => {
     if (!selectedChatId) return
-    if (chatMessages[selectedChatId] !== undefined && chatMessages[selectedChatId].length > 0) return
+    if (loadedConvRef.current.has(selectedChatId)) return
     let cancelled = false
     async function load() {
       setLoadingMsgs(true)
       try {
         const msgs = await getMessages(selectedChatId as string)
         if (cancelled) return
+        loadedConvRef.current.add(selectedChatId as string)
         setChatMessages(selectedChatId as string, msgs)
       } catch (e) {
         pushToast(e instanceof Error ? e.message : "Chargement messages impossible", "error")
@@ -204,7 +206,7 @@ export function ChatInterface() {
     return () => {
       cancelled = true
     }
-  }, [selectedChatId, chatMessages, setChatMessages, pushToast])
+  }, [selectedChatId, setChatMessages, pushToast])
 
   useEffect(() => {
     const el = listRef.current
@@ -231,10 +233,11 @@ export function ChatInterface() {
   async function handleSelectConversation(id: string) {
     setSelectedChatId(id)
     setStatusBanner(null)
-    if (chatMessages[id] !== undefined) return
+    if (loadedConvRef.current.has(id) && (chatMessages[id]?.length ?? 0) > 0) return
     setLoadingMsgs(true)
     try {
       const msgs = await getMessages(id)
+      loadedConvRef.current.add(id)
       setChatMessages(id, msgs)
     } catch (e) {
       pushToast(e instanceof Error ? e.message : "Chargement messages impossible", "error")
@@ -259,6 +262,7 @@ export function ChatInterface() {
     if (typeof window !== "undefined" && !window.confirm("Supprimer cette conversation ?")) return
     try {
       await deleteConversation(id)
+      loadedConvRef.current.delete(id)
       const remaining = chatConversations.filter((c) => c.id !== id)
       setChatConversations(remaining)
       if (selectedChatId === id) {
