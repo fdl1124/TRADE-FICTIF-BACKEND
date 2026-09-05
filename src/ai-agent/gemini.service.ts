@@ -4,9 +4,10 @@ import { ThinkingLevel } from './context-engine.service';
 import { GeminiKeyRing } from './gemini-key-ring';
 
 const GEMINI_INTERACTIONS_URL = 'https://generativelanguage.googleapis.com/v1beta/interactions';
-export const GEMINI_PRIMARY_MODEL = process.env.GEMINI_PRIMARY_MODEL || 'gemini-3.7-flash';
-export const GEMINI_FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-3.6-flash';
-export const GEMINI_SECONDARY_FALLBACK_MODEL = process.env.GEMINI_SECONDARY_FALLBACK_MODEL || 'gemini-2.5-flash';
+export const GEMINI_PRIMARY_MODEL = process.env.GEMINI_PRIMARY_MODEL || 'gemini-3.8-flash';
+export const GEMINI_FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-3.7-flash';
+export const GEMINI_SECONDARY_FALLBACK_MODEL = process.env.GEMINI_SECONDARY_FALLBACK_MODEL || 'gemini-3.6-flash';
+export const GEMINI_LAST_RESORT_MODEL = process.env.GEMINI_LAST_RESORT_MODEL || 'gemini-2.5-flash';
 const PRIMARY_TIMEOUT_MS = 60_000;
 const FALLBACK_TIMEOUT_MS = 45_000;
 // Budget global par modele : le 429 est une limite de debit (ex. 20 req/min)
@@ -232,6 +233,7 @@ export class GeminiService {
     const attempts: Array<{ model: GeminiModelName; timeoutMs: number; budgetMs: number }> = [
       { model: GEMINI_PRIMARY_MODEL, timeoutMs: PRIMARY_TIMEOUT_MS, budgetMs: PRIMARY_BUDGET_MS },
       { model: GEMINI_FALLBACK_MODEL, timeoutMs: FALLBACK_TIMEOUT_MS, budgetMs: FALLBACK_BUDGET_MS },
+      { model: GEMINI_SECONDARY_FALLBACK_MODEL, timeoutMs: FALLBACK_TIMEOUT_MS, budgetMs: FALLBACK_BUDGET_MS },
     ];
 
     for (const attempt of attempts) {
@@ -379,7 +381,9 @@ export class GeminiService {
   }
 
   async *streamInteraction(request: GeminiStreamRequest): AsyncGenerator<GeminiStreamEvent> {
-    const attempts = [GEMINI_PRIMARY_MODEL, GEMINI_FALLBACK_MODEL, GEMINI_SECONDARY_FALLBACK_MODEL];
+    // Chat : 3.8 puis 3.7 puis 3.6 ; le 2.5 reste le dernier recours (recherche web,
+    // jamais pour le trading des agents).
+    const attempts = [GEMINI_PRIMARY_MODEL, GEMINI_FALLBACK_MODEL, GEMINI_SECONDARY_FALLBACK_MODEL, GEMINI_LAST_RESORT_MODEL];
     for (let attemptIndex = 0; attemptIndex < attempts.length; attemptIndex++) {
       const model = attempts[attemptIndex];
       if (this.isModelCoolingDown(model)) {

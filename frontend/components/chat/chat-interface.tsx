@@ -45,14 +45,28 @@ function markdownToHtml(input: string) {
     /\[([^\]]+?)\]\((https?:\/\/[^\s)]+)\)/g,
     '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:var(--cyan);text-decoration:underline">$1</a>'
   )
+  html = html.replace(/^### (.+)$/gm, '<h3 style="margin:10px 0 4px;font-size:14px">$1</h3>')
+  html = html.replace(/^## (.+)$/gm, '<h2 style="margin:10px 0 4px;font-size:15px">$1</h2>')
+  html = html.replace(/^# (.+)$/gm, '<h2 style="margin:10px 0 4px;font-size:16px">$1</h2>')
+  html = html.replace(/^&gt; (.+)$/gm, '<blockquote style="margin:8px 0;padding:4px 10px;border-left:3px solid var(--cyan);color:var(--muted)">$1</blockquote>')
+  html = html.replace(/^---+$/gm, '<hr style="border:0;border-top:1px solid var(--border);margin:10px 0" />')
   html = html.replace(/^- (.+)$/gm, "<li>$1</li>")
+  html = html.replace(/^\d+[.)] (.+)$/gm, "<oli>$1</oli>")
+  html = html.replace(/(?:<oli>.*?<\/oli>\n?)+/g, (m) => {
+    return `<ol style="margin:8px 0;padding-left:18px;display:flex;flex-direction:column;gap:4px">${m}</ol>`
+  })
   html = html.replace(/(?:<li>.*?<\/li>\n?)+/g, (m) => {
     return `<ul style="margin:8px 0;padding-left:18px;display:flex;flex-direction:column;gap:4px">${m}</ul>`
   })
   html = html.replace(/\n/g, "<br>")
   html = html.replace(/<\/li><br><li>/g, "</li><li>")
+  html = html.replace(/<\/oli><br><oli>/g, "</oli><oli>")
   html = html.replace(/<ul[^>]*><br>/g, (m) => m.replace("<br>", ""))
+  html = html.replace(/<ol[^>]*><br>/g, (m) => m.replace("<br>", ""))
   html = html.replace(/<br><\/ul>/g, "</ul>")
+  html = html.replace(/<br><\/ol>/g, "</ol>")
+  html = html.replace(/<oli>/g, '<li style="margin:0">')
+  html = html.replace(/<\/oli>/g, "</li>")
   blockPlaceholders.forEach((block, i) => {
     html = html.replace(`__BLOCK_${i}__`, block)
   })
@@ -62,8 +76,23 @@ function markdownToHtml(input: string) {
   return html
 }
 
-function relativeDate(iso: string) {
-  const d = new Date(iso)
+const TOOL_LABELS: Record<string, string> = {
+  get_portfolio_summary: "Résumé du portefeuille",
+  get_positions: "Positions ouvertes",
+  get_asset_snapshot: "Analyse de l'actif",
+  get_order_history: "Historique des ordres",
+  search_assets: "Recherche d'actifs",
+  get_chart_data: "Analyse du graphique",
+  propose_order: "Proposition d'ordre",
+  google_search: "Recherche web",
+  url_context: "Analyse du lien",
+}
+
+function toolLabel(name: string) {
+  return TOOL_LABELS[name] ?? name
+}
+
+function relativeDate(iso: string) {  const d = new Date(iso)
   const now = new Date()
   const diff = now.getTime() - d.getTime()
   const minutes = Math.floor(diff / 60000)
@@ -106,15 +135,29 @@ export function ChatInterface() {
   const [input, setInput] = useState("")
   const [pendingFiles, setPendingFiles] = useState<File[]>([])
   const [previewUrls, setPreviewUrls] = useState<string[]>([])
-  const [thinkingEnabled, setThinkingEnabled] = useState(false)
+  const [thinkingEnabled, setThinkingEnabled] = useState(true)
   const [statusBanner, setStatusBanner] = useState<string | null>(null)
   const [thinkingOpen, setThinkingOpen] = useState<Record<string, boolean>>({})
   const [confirmingOrder, setConfirmingOrder] = useState<string | null>(null)
+  const [isMobile, setIsMobile] = useState(false)
+  const [showSidebar, setShowSidebar] = useState(true)
 
   const listRef = useRef<HTMLDivElement | null>(null)
   const endRef = useRef<HTMLDivElement | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)")
+    const apply = () => {
+      setIsMobile(mq.matches)
+      setShowSidebar(!mq.matches)
+    }
+    apply()
+    mq.addEventListener("change", apply)
+    return () => mq.removeEventListener("change", apply)
+  }, [])
 
   const messages = selectedChatId ? chatMessages[selectedChatId] ?? [] : []
 
@@ -164,7 +207,8 @@ export function ChatInterface() {
   }, [selectedChatId, chatMessages, setChatMessages, pushToast])
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" })
+    const el = listRef.current
+    if (el) el.scrollTop = el.scrollHeight
   }, [messages, statusBanner, chatStreaming])
 
   useEffect(() => {
@@ -343,6 +387,8 @@ export function ChatInterface() {
     })
     setChatStreaming(true)
     setStatusBanner("Envoi…")
+    const controller = new AbortController()
+    abortRef.current = controller
     let accContent = ""
     let accThinking = ""
     let accTools: string[] = []
@@ -353,8 +399,7 @@ export function ChatInterface() {
       await sendMessageStream(
         conversationId,
         { content, attachments, thinkingEnabled },
-        {
-          onDelta: (text) => {
+        {          onDelta: (text) => {
             accContent += text
             setChatMessages(conversationId, ((): ChatMessage[] => {
               const cur = useTrading.getState().chatMessages[conversationId] ?? []
@@ -413,12 +458,19 @@ export function ChatInterface() {
               return cur.map((m) => (m.id === userMessage.id ? { ...m, id: data.messageId } : m))
             })())
           },
-        }
+        },
+        { signal: controller.signal }
       )
     } catch (e) {
-      pushToast(e instanceof Error ? e.message : "Envoi impossible", "error")
-      setStatusBanner(null)
+      const aborted = e instanceof DOMException ? e.name === "AbortError" : e instanceof Error && e.name === "AbortError"
+      if (aborted) {
+        pushToast("Génération interrompue", "success")
+      } else {
+        pushToast(e instanceof Error ? e.message : "Envoi impossible", "error")
+        setStatusBanner(null)
+      }
     } finally {
+      abortRef.current = null
       setChatStreaming(false)
       setTimeout(() => setStatusBanner(null), 1200)
     }
@@ -445,23 +497,39 @@ export function ChatInterface() {
   }
 
   return (
-    <div className="panel chat-layout" style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 120px)", minHeight: 560, padding: 0, overflow: "hidden" }}>
+    <div className="panel chat-layout" style={{ display: "flex", flexDirection: "column", height: "calc(100dvh - 120px)", minHeight: 480, padding: 0, overflow: "hidden", position: "relative" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", borderBottom: "1px solid var(--border)", gap: 10 }}>
-        <strong style={{ letterSpacing: ".04em" }}>Chat</strong>
+        {isMobile && (
+          <button
+            onClick={() => setShowSidebar((v) => !v)}
+            style={{ width: 34, height: 34, display: "grid", placeItems: "center", border: "1px solid var(--border)", background: "var(--panel-2)", cursor: "pointer", flexShrink: 0 }}
+            aria-label="Conversations"
+          >
+            ☰
+          </button>
+        )}
+        <strong style={{ letterSpacing: ".04em", flex: 1 }}>Assistant IA</strong>
         <button className="primary" onClick={handleNewConversation} style={{ padding: "8px 12px" }}>
           Nouvelle conversation
         </button>
       </div>
 
-      <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+      <div style={{ display: "flex", flex: 1, minHeight: 0, position: "relative" }}>
         <aside
           style={{
-            width: 260,
+            width: isMobile ? "78%" : 260,
+            maxWidth: 300,
+            position: isMobile ? "absolute" : "relative",
+            top: 0,
+            bottom: 0,
+            left: 0,
+            zIndex: 30,
             borderRight: "1px solid var(--border)",
-            display: "flex",
+            display: showSidebar ? "flex" : "none",
             flexDirection: "column",
             minWidth: 0,
             background: "var(--panel)",
+            boxShadow: isMobile ? "12px 0 30px rgba(0,0,0,0.45)" : "none",
           }}
         >
           <div style={{ padding: 10, overflow: "auto", flex: 1 }}>
@@ -478,7 +546,10 @@ export function ChatInterface() {
                 {chatConversations.map((c) => (
                   <div
                     key={c.id}
-                    onClick={() => handleSelectConversation(c.id)}
+                    onClick={() => {
+                      handleSelectConversation(c.id)
+                      if (isMobile) setShowSidebar(false)
+                    }}
                     role="button"
                     tabIndex={0}
                     onKeyDown={(e) => {
@@ -570,7 +641,7 @@ export function ChatInterface() {
                           onClick={() => setThinkingOpen((p) => ({ ...p, [m.id]: !p[m.id] }))}
                           style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 8px", background: "transparent", border: 0, color: "var(--muted)", cursor: "pointer", fontSize: 11 }}
                         >
-                          <span>Thinking</span>
+                          <span>Réflexion du modèle</span>
                           <span>{thinkingOpen[m.id] ? "−" : "+"}</span>
                         </button>
                         {thinkingOpen[m.id] && (
@@ -601,7 +672,7 @@ export function ChatInterface() {
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
                         {m.toolSteps.map((t, idx) => (
                           <span key={idx} className="pill cyan">
-                            {t.name}
+                            {toolLabel(t.name)}
                           </span>
                         ))}
                       </div>
@@ -694,7 +765,7 @@ export function ChatInterface() {
                     handleSend()
                   }
                 }}
-                placeholder="Votre message… (Shift+Enter nouvelle ligne)"
+                placeholder="Votre message…"
                 rows={1}
                 style={{
                   flex: 1,
@@ -703,8 +774,12 @@ export function ChatInterface() {
                   resize: "none",
                   background: "#0D141E",
                   border: "1px solid var(--border)",
+                  borderRadius: 8,
                   color: "var(--foreground)",
-                  padding: "9px 10px",
+                  padding: "9px 12px",
+                  fontSize: 14,
+                  lineHeight: 1.5,
+                  outline: "none",
                   overflow: "auto",
                 }}
               />
@@ -722,9 +797,20 @@ export function ChatInterface() {
                 Thinking
               </label>
 
-              <button className="primary" onClick={handleSend} disabled={chatStreaming || (!input.trim() && pendingFiles.length === 0)} style={{ height: 38, padding: "0 14px", opacity: chatStreaming ? 0.6 : 1 }}>
-                {chatStreaming ? "…" : "Envoyer"}
-              </button>
+              {chatStreaming ? (
+                <button
+                  onClick={() => abortRef.current?.abort()}
+                  style={{ width: 44, height: 38, display: "grid", placeItems: "center", background: "#E5484D", color: "#fff", border: 0, cursor: "pointer", flexShrink: 0, borderRadius: 8 }}
+                  aria-label="Arrêter la génération"
+                  title="Arrêter la génération"
+                >
+                  <span style={{ display: "block", width: 12, height: 12, background: "#fff" }} />
+                </button>
+              ) : (
+                <button className="primary" onClick={handleSend} disabled={!input.trim() && pendingFiles.length === 0} style={{ height: 38, padding: "0 16px", borderRadius: 8 }}>
+                  Envoyer
+                </button>
+              )}
             </div>
           </div>
         </div>

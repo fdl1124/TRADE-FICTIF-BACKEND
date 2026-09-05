@@ -539,6 +539,7 @@ export async function sendMessageStream(
   conversationId: string,
   input: SendMessageInput,
   callbacks: ChatStreamCallbacks,
+  options?: { signal?: AbortSignal },
 ): Promise<void> {
   const attachments = input.attachments ?? []
   validateAttachments(attachments)
@@ -601,6 +602,7 @@ export async function sendMessageStream(
       attachments,
       thinkingEnabled: input.thinkingEnabled ?? false,
     }),
+    signal: options?.signal,
   })
   if (!response.ok || !response.body) {
     let message = "Erreur API"

@@ -6,6 +6,8 @@ import { ContextEngineService } from '../ai-agent/context-engine.service';
 import { ASSETS } from '../common/constants/assets';
 import { ListOrdersQueryDto } from '../common/dto/query-dtos';
 
+type ChartRange = '1d' | '1w' | '1m';
+
 export const PLATFORM_TOOL_DECLARATIONS: unknown[] = [
   {
     type: 'function',
@@ -61,6 +63,20 @@ export const PLATFORM_TOOL_DECLARATIONS: unknown[] = [
   },
   {
     type: 'function',
+    name: 'get_chart_data',
+    description:
+      'Get OHLC candles (the same data shown on the price chart) for one asset so you can analyze its chart: trend direction, support and resistance levels, swing highs/lows, volume patterns. Returns a downsampled candle series plus summary stats.',
+    parameters: {
+      type: 'object',
+      properties: {
+        symbol: { type: 'string', description: 'Tradable symbol, e.g. BTCUSDT or AAPL' },
+        range: { type: 'string', description: 'Chart period: "1d" (intraday), "1w" (one week) or "1m" (one month). Default "1m".' },
+      },
+      required: ['symbol'],
+    },
+  },
+  {
+    type: 'function',
     name: 'propose_order',
     description:
       'Propose a trade for the user. It is NEVER executed automatically: the proposal is shown to the user who must confirm it in the UI before anything happens.',
@@ -93,6 +109,7 @@ interface ToolArgs {
   query?: string;
   limit?: number;
   status?: string;
+  range?: string;
   side?: string;
   quantity?: number;
   order_type?: string;
@@ -205,6 +222,38 @@ export class PlatformToolExecutor {
             type: a.type,
             exchange: a.exchange,
           })),
+        };
+      }
+      case 'get_chart_data': {
+        const symbol = String(args.symbol ?? '').toUpperCase();
+        const rangeArg = String(args.range ?? '1m').toLowerCase();
+        const range: ChartRange = rangeArg === '1d' || rangeArg === '1w' ? rangeArg : '1m';
+        const candles = await this.marketData.getCandles(symbol, range);
+        if (!candles || candles.length === 0) {
+          return { result: { error: `No chart data available for ${symbol}` } };
+        }
+        const step = Math.max(1, Math.ceil(candles.length / 60));
+        const sampled = candles
+          .filter((_, i) => i % step === 0)
+          .map((c) => ({ t: c.time, o: c.open, h: c.high, l: c.low, c: c.close, v: c.volume }));
+        const first = sampled[0].o;
+        const last = sampled[sampled.length - 1].c;
+        const high = Math.max(...sampled.map((c) => c.h));
+        const low = Math.min(...sampled.map((c) => c.l));
+        return {
+          result: {
+            symbol,
+            range,
+            totalCandles: candles.length,
+            stats: {
+              start: first,
+              end: last,
+              changePercent: Number((((last - first) / first) * 100).toFixed(2)),
+              periodHigh: high,
+              periodLow: low,
+            },
+            candles: sampled,
+          },
         };
       }
       case 'propose_order': {
