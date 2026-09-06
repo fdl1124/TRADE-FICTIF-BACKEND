@@ -59,6 +59,7 @@ import {
 } from "@/lib/api"
 import type { AgentInstance, ChatMessage, Conversation } from "@/lib/api"
 import { onAuthChange, signOutUser } from "@/lib/auth/client"
+import { enablePushNotifications } from "@/lib/push/client"
 import { TradingApiError, humanizeApiError } from "@/lib/api/errors"
 import { createPriceClient } from "@/lib/websocket/prices"
 import { isMockMode, useTrading } from "@/store/use-trading"
@@ -1778,6 +1779,35 @@ function SettingsPage() {
   const [confirmLogout, setConfirmLogout] = useState(false)
   const [confirmDeleteAccount, setConfirmDeleteAccount] = useState(false)
   const [deletingAccount, setDeletingAccount] = useState(false)
+  const [pushBusy, setPushBusy] = useState(false)
+  const [pushEnabled, setPushEnabled] = useState(false)
+  const [pushMessage, setPushMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    setPushEnabled(typeof Notification !== "undefined" && Notification.permission === "granted")
+  }, [])
+
+  const handleEnablePush = useCallback(async () => {
+    setPushBusy(true)
+    setPushMessage(null)
+    const result = await enablePushNotifications()
+    if (result.ok) {
+      setPushEnabled(true)
+      setPushMessage("Cet appareil recevra les décisions de vos agents, même site fermé.")
+    } else {
+      setPushEnabled(false)
+      setPushMessage(
+        result.reason === "permission"
+          ? "Permission refusée — réactivez-la dans les réglages du navigateur pour ce site."
+          : result.reason === "vapid"
+            ? "Service en cours de configuration — réessayez dans quelques minutes."
+            : result.reason === "unsupported"
+              ? "Notifications non prises en charge par ce navigateur."
+              : "Activation impossible — vérifiez votre connexion.",
+      )
+    }
+    setPushBusy(false)
+  }, [])
 
   function exportToCsv(filename: string, rows: Record<string, unknown>[]) {
     if (!rows || rows.length === 0) return
@@ -1819,6 +1849,17 @@ function SettingsPage() {
             <button disabled={!orders.length} onClick={() => exportToCsv("ledger-orders.csv", orders)}>Exporter les ordres ({orders.length})</button>
             <button disabled={!positions.length} onClick={() => exportToCsv("ledger-positions.csv", positions)}>Exporter les positions ({positions.length})</button>
             <button disabled={!decisions.length} onClick={() => exportToCsv("ledger-decisions.csv", decisions)}>Exporter les décisions ({decisions.length})</button>
+          </div>
+        </section>
+        <section className="panel">
+          <span className="eyebrow">NOTIFICATIONS</span>
+          <h2>Alertes push</h2>
+          <p>Recevez une notification sur cet appareil dès qu'un agent prend une décision — même site fermé. Idéal pour les tâches longues qui s'étendent sur plusieurs heures ou jours.</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start" }}>
+            <button disabled={pushBusy} onClick={handleEnablePush}>
+              {pushBusy ? "Activation…" : pushEnabled ? "Notifications activées ✓" : "Activer les notifications push"}
+            </button>
+            {pushMessage && <span style={{ fontSize: 12, color: "var(--muted)" }}>{pushMessage}</span>}
           </div>
         </section>
         <section className="panel danger-zone">

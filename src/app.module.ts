@@ -12,6 +12,7 @@ import { PortfolioModule } from './portfolio/portfolio.module';
 import { OrdersModule } from './orders/orders.module';
 import { AiAgentModule } from './ai-agent/ai-agent.module';
 import { ChatModule } from './chat/chat.module';
+import { PushModule } from './push/push.module';
 import { AllExceptionsFilter } from './common/filters/api-exception.filter';
 
 @Module({
@@ -28,6 +29,7 @@ import { AllExceptionsFilter } from './common/filters/api-exception.filter';
     OrdersModule,
     AiAgentModule,
     ChatModule,
+    PushModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

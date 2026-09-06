@@ -200,7 +200,7 @@ function validateAttachments(attachments: ChatAttachmentInput[]) {
   }
 }
 
-async function request<T>(path: string, init: RequestInit | undefined, parse: (value: unknown) => T): Promise<T> {
+export async function request<T>(path: string, init: RequestInit | undefined, parse: (value: unknown) => T): Promise<T> {
   const token = await getIdToken()
   const response = await fetch(`${API}${path}`, {
     ...init,

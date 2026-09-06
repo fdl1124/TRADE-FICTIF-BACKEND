@@ -13,6 +13,7 @@ import { ApiErrors } from '../common/api-error';
 import { ContextEngineService } from './context-engine.service';
 import { GeminiService } from './gemini.service';
 import { NormalizedDecision, RiskValidationService } from './risk-validation.service';
+import { PushService } from '../push/push.service';
 
 const AGENT_PROFILES = ['technical', 'news', 'risk', 'custom'] as const;
 export type AgentProfile = (typeof AGENT_PROFILES)[number];
@@ -75,6 +76,7 @@ export class AiAgentsService {
     private readonly contextEngine: ContextEngineService,
     private readonly gemini: GeminiService,
     private readonly riskValidation: RiskValidationService,
+    private readonly push: PushService,
   ) {}
 
   async list(accountId: string): Promise<AgentInstance[]> {
@@ -345,6 +347,26 @@ export class AiAgentsService {
         new Date().toISOString(),
       ],
     });
+
+    // Notification push (hors HOLD) : l'utilisateur apprend la decision meme
+    // site ferme. Taches longues des agents = cycle serveur, pas de session requise.
+    const finalAction = normalized?.action ?? 'HOLD';
+    if (finalAction === 'BUY' || finalAction === 'SELL') {
+      const qty = normalized?.proposedQuantity ?? null;
+      const body =
+        `${finalAction} ${marketContext.symbol}` +
+        (qty !== null ? ` — quantité proposée ${qty}` : '') +
+        ` (confiance ${Math.round((normalized?.confidenceScore ?? 0) * 100)}%)` +
+        (agent.mode === 'autonomous' ? ' — exécutée' : ' — à valider dans le journal');
+      void this.push.notifyAccount(agent.accountId, `Agent ${agent.name}`, body, '/agents');
+    } else if (validationErrors.length > 0) {
+      void this.push.notifyAccount(
+        agent.accountId,
+        `Agent ${agent.name}`,
+        `Décision rejetée sur ${marketContext.symbol} — voir le journal`,
+        '/agents',
+      );
+    }
 
     return this.readDecision(agent.accountId, decisionId);
   }
