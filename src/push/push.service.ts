@@ -1,5 +1,5 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { Inject(LIBSQL_CLIENT) } from '../database/libsql-token';
+import { Injectable, Logger, OnModuleInit, Inject } from '@nestjs/common';
+import { LIBSQL_CLIENT } from '../database/libsql-token';
 import type { Client } from '@libsql/client';
 import { FirebaseService } from '../auth/firebase.service';
 import { randomUUID } from 'node:crypto';
