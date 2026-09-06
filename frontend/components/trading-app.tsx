@@ -1784,7 +1784,14 @@ function SettingsPage() {
   const [pushMessage, setPushMessage] = useState<string | null>(null)
 
   useEffect(() => {
-    setPushEnabled(typeof Notification !== "undefined" && Notification.permission === "granted")
+    // Si la permission est deja accordee, on (re)enregistre le token FCM
+    // automatiquement : la permission seule ne garantit pas l'enregistrement.
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      setPushEnabled(true)
+      void enablePushNotifications().then((r) => {
+        setPushMessage(r.ok ? "Cet appareil recevra les décisions de vos agents, même site fermé." : null)
+      })
+    }
   }, [])
 
   const handleEnablePush = useCallback(async () => {
