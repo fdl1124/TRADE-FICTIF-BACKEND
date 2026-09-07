@@ -1786,12 +1786,21 @@ function SettingsPage() {
   useEffect(() => {
     // Si la permission est deja accordee, on (re)enregistre le token FCM
     // automatiquement : la permission seule ne garantit pas l'enregistrement.
-    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-      setPushEnabled(true)
-      void enablePushNotifications().then((r) => {
-        setPushMessage(r.ok ? "Cet appareil recevra les décisions de vos agents, même site fermé." : null)
-      })
-    }
+    // Marque locale pour eviter un re-enregistrement a chaque montage.
+    try {
+      const done = localStorage.getItem("ledger-push-registered") === "1"
+      if (typeof Notification !== "undefined" && Notification.permission === "granted" && !done) {
+        setPushEnabled(true)
+        void enablePushNotifications().then((r) => {
+          if (r.ok) {
+            try { localStorage.setItem("ledger-push-registered", "1") } catch {}
+            setPushMessage("Cet appareil recevra les décisions de vos agents, même site fermé.")
+          }
+        })
+      } else if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        setPushEnabled(true)
+      }
+    } catch {}
   }, [])
 
   const handleEnablePush = useCallback(async () => {
@@ -1799,6 +1808,7 @@ function SettingsPage() {
     setPushMessage(null)
     const result = await enablePushNotifications()
     if (result.ok) {
+      try { localStorage.setItem("ledger-push-registered", "1") } catch {}
       setPushEnabled(true)
       setPushMessage("Cet appareil recevra les décisions de vos agents, même site fermé.")
     } else {
