@@ -10,12 +10,9 @@ export const GEMINI_SECONDARY_FALLBACK_MODEL = process.env.GEMINI_SECONDARY_FALL
 export const GEMINI_LAST_RESORT_MODEL = process.env.GEMINI_LAST_RESORT_MODEL || 'gemini-2.5-flash';
 const PRIMARY_TIMEOUT_MS = 60_000;
 const FALLBACK_TIMEOUT_MS = 45_000;
-// Budget global par modele : le 429 est une limite de debit (ex. 20 req/min)
-// avec "retry in Xs" — on attend plutot que de bruler toutes les cles en rafale.
 const PRIMARY_BUDGET_MS = 150_000;
 const FALLBACK_BUDGET_MS = 60_000;
 const MAX_TIMEOUT_TRIES_PER_MODEL = 2;
-// Pacage global : jamais plus d'une requete Gemini toutes les 3,5 s (limite gratuite ~20/min).
 const MIN_REQUEST_GAP_MS = 5_000;
 const MAX_KEYS = 10;
 const KEY_FAILURE_STATUSES: ReadonlySet<number> = new Set([401, 403, 429]);
@@ -161,7 +158,6 @@ function keyFailureReason(status: number): 'auth' | 'quota' {
   return status === 429 ? 'quota' : 'auth';
 }
 
-// Extrait le delai "Please retry in 15.4s" ou "retry in 605.081258ms" du corps d'une erreur 429.
 function parseRetryDelayMs(body: string): number | null {
   const match = /retry (?:in|after) ([0-9]+(?:\.[0-9]+)?)\s*(ms|s)\b/i.exec(body);
   if (!match) {
@@ -271,8 +267,6 @@ export class GeminiService {
           }
 
           if (isRateLimited) {
-            // Les cles peuvent repartir le quota par projet : on met la cle courante
-            // au repos (60s) et on essaie une autre cle, eventuellement d'un autre projet.
             this.ring.markFailed(keyIndex, 'quota');
             if (this.ring.size <= 1 || !this.ring.rotateToNextAvailable()) {
               const cooldownMs = Math.min(parseRetryDelayMs(httpError.body ?? '') ?? 45_000, 600_000);
@@ -365,7 +359,6 @@ export class GeminiService {
         throw new GeminiHttpError(response.status, errBody);
       }
       const json = (await response.json()) as InteractionResponse;
-      // Repartition de charge : la requete suivante partira sur la cle suivante.
       if (this.ring.size > 1) {
         this.ring.rotateToNextAvailable();
       }
@@ -381,8 +374,6 @@ export class GeminiService {
   }
 
   async *streamInteraction(request: GeminiStreamRequest): AsyncGenerator<GeminiStreamEvent> {
-    // Chat : 3.8 puis 3.7 puis 3.6 ; le 2.5 reste le dernier recours (recherche web,
-    // jamais pour le trading des agents).
     const attempts = [GEMINI_PRIMARY_MODEL, GEMINI_FALLBACK_MODEL, GEMINI_SECONDARY_FALLBACK_MODEL, GEMINI_LAST_RESORT_MODEL];
     for (let attemptIndex = 0; attemptIndex < attempts.length; attemptIndex++) {
       const model = attempts[attemptIndex];
@@ -423,8 +414,6 @@ export class GeminiService {
                 thinking_level: normalizeThinkingLevel(model, request.thinkingLevel),
                 thinking_summaries: 'auto',
               },
-              // Tour de reprise apres un outil : previous_interaction_id + function_result
-              // dans input, SANS outils (la doc les interdit avec previous_*_id).
               stream: true,
               ...(request.previousInteractionId
                 ? {
@@ -474,8 +463,6 @@ export class GeminiService {
                     ? event.interaction_id
                     : '';
               if (wireInteractionId && !interactionIdSent && eventType !== 'interaction.completed') {
-                // L'id arrive des le premier evenement (interaction.created) :
-                // indispensable pour enchainer les function calls.
                 interactionIdSent = true;
                 yield { kind: 'interaction_id', interactionId: wireInteractionId };
               }

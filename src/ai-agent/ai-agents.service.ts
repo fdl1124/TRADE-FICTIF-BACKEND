@@ -348,8 +348,6 @@ export class AiAgentsService {
       ],
     });
 
-    // Notification push (hors HOLD) : l'utilisateur apprend la decision meme
-    // site ferme. Taches longues des agents = cycle serveur, pas de session requise.
     const finalAction = normalized?.action ?? 'HOLD';
     if (finalAction === 'BUY' || finalAction === 'SELL') {
       const qty = normalized?.proposedQuantity ?? null;

@@ -226,17 +226,17 @@ Answer in the same language as the user (French if they write in French). Be con
       options.attachments.map((a) => a.name),
     );
 
-    const orderedCopies: Array<{ type: 'inline_data'; mime_type: string; data: string }> =
+    const orderedCopies: Array<{ type: 'image'; mime_type: string; data: string }> =
       options.attachments.length > 0
         ? options.attachments.map((attachment) => ({
-            type: 'inline_data' as const,
+            type: 'image' as const,
             mime_type: attachment.mimeType,
             data: attachment.dataBase64,
           }))
         : [];
 
     const firstInputBase = firstInput;
-    const geminiInput: string | Array<{ type: 'text'; text: string } | { type: 'inline_data'; mime_type: string; data: string }> =
+    const geminiInput: string | Array<{ type: 'text'; text: string } | { type: 'image'; mime_type: string; data: string }> =
       orderedCopies.length > 0
         ? [{ type: 'text' as const, text: firstInputBase }, ...orderedCopies]
         : firstInputBase;
@@ -247,7 +247,7 @@ Answer in the same language as the user (French if they write in French). Be con
       | string
       | Array<
           | { type: 'text'; text: string }
-          | { type: 'inline_data'; mime_type: string; data: string }
+          | { type: 'image'; mime_type: string; data: string }
           | { type: 'function_result'; name: string; call_id: string; result: Array<{ type: 'text'; text: string }> }
         >;
     let input: StreamInput = geminiInput as StreamInput;

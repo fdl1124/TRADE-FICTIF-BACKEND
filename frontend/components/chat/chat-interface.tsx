@@ -11,6 +11,7 @@ import {
   type ChatMessage,
 } from "@/lib/api"
 import { useTrading } from "@/store/use-trading"
+import { ConfirmDialog } from "../confirm-dialog"
 
 function escapeHtml(value: string) {
   return value
@@ -40,7 +41,21 @@ function markdownToHtml(input: string) {
     return `__INLINE_${idx}__`
   })
   html = html.replace(/\*\*([^*]+?)\*\*/g, "<strong>$1</strong>")
+  html = html.replace(/~~([^~]+?)~~/g, "<del style=\"opacity:.7\">$1</del>")
   html = html.replace(/\*([^*]+?)\*/g, "<em>$1</em>")
+  const tableStyle = "border-collapse:collapse;width:100%;margin:8px 0;font-size:12px"
+  const cellStyle = "border:1px solid var(--border);padding:5px 8px;text-align:left"
+  html = html.replace(/((?:^\|.*\|\s*$\n?)+)/gm, (block) => {
+    const rows = block.trim().split("\n").filter((r) => r.trim())
+    if (rows.length < 2 || !/^\|[\s:|-]+\|$/.test(rows[1].trim())) return block
+    const cells = (row: string) => row.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim())
+    const head = cells(rows[0]).map((c) => `<th style="${cellStyle}background:var(--panel-2)">${c}</th>`).join("")
+    const body = rows
+      .slice(2)
+      .map((r) => `<tr>${cells(r).map((c) => `<td style="${cellStyle}">${c}</td>`).join("")}</tr>`)
+      .join("")
+    return `<table style="${tableStyle}"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`
+  })
   html = html.replace(
     /\[([^\]]+?)\]\((https?:\/\/[^\s)]+)\)/g,
     '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:var(--cyan);text-decoration:underline">$1</a>'
@@ -140,8 +155,10 @@ export function ChatInterface() {
   const [statusBanner, setStatusBanner] = useState<string | null>(null)
   const [thinkingOpen, setThinkingOpen] = useState<Record<string, boolean>>({})
   const [confirmingOrder, setConfirmingOrder] = useState<string | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [isMobile, setIsMobile] = useState(false)
   const [showSidebar, setShowSidebar] = useState(true)
+  const [stickToBottom, setStickToBottom] = useState(true)
 
   const listRef = useRef<HTMLDivElement | null>(null)
   const endRef = useRef<HTMLDivElement | null>(null)
@@ -211,8 +228,14 @@ export function ChatInterface() {
 
   useEffect(() => {
     const el = listRef.current
-    if (el) el.scrollTop = el.scrollHeight
-  }, [messages, statusBanner, chatStreaming])
+    if (el && stickToBottom) el.scrollTop = el.scrollHeight
+  }, [messages, statusBanner, chatStreaming, stickToBottom])
+
+  const handleListScroll = () => {
+    const el = listRef.current
+    if (!el) return
+    setStickToBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 120)
+  }
 
   useEffect(() => {
     return () => {
@@ -260,7 +283,6 @@ export function ChatInterface() {
   }
 
   async function handleDeleteConversation(id: string) {
-    if (typeof window !== "undefined" && !window.confirm("Supprimer cette conversation ?")) return
     try {
       await deleteConversation(id)
       loadedConvRef.current.delete(id)
@@ -273,6 +295,7 @@ export function ChatInterface() {
     } catch (e) {
       pushToast(e instanceof Error ? e.message : "Suppression impossible", "error")
     }
+    setConfirmDeleteId(null)
   }
 
   function handleFilesSelected(files: FileList | null) {
@@ -578,7 +601,7 @@ export function ChatInterface() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
-                          handleDeleteConversation(c.id)
+                          setConfirmDeleteId(c.id)
                         }}
                         style={{ border: 0, background: "transparent", color: "var(--muted)", cursor: "pointer", fontSize: 14, padding: "2px 4px" }}
                         aria-label="Supprimer"
@@ -601,7 +624,7 @@ export function ChatInterface() {
             </div>
           )}
 
-          <div ref={listRef} style={{ flex: 1, overflow: "auto", padding: "16px 14px", display: "flex", flexDirection: "column", gap: 14 }}>
+          <div ref={listRef} onScroll={handleListScroll} style={{ flex: 1, overflow: "auto", padding: "16px 14px", display: "flex", flexDirection: "column", gap: 14, position: "relative" }}>
             {!selectedChatId ? (
               <div style={{ color: "var(--muted)", textAlign: "center", marginTop: 40, fontSize: 13 }}>Sélectionnez ou créez une conversation</div>
             ) : loadingMsgs ? (
@@ -616,7 +639,11 @@ export function ChatInterface() {
             ) : messages.length === 0 ? (
               <div style={{ color: "var(--muted)", textAlign: "center", marginTop: 40, fontSize: 13 }}>Aucun message — commencez la discussion</div>
             ) : (
-              messages.map((m) => (
+              messages.map((m, msgIdx) => {
+                const isLastMsg = msgIdx === messages.length - 1
+                const thinkingAutoOpen = chatStreaming && isLastMsg
+                const thinkingVisible = thinkingOpen[m.id] ?? thinkingAutoOpen
+                return (
                 <div
                   key={m.id}
                   style={{
@@ -643,13 +670,13 @@ export function ChatInterface() {
                     {m.role === "assistant" && m.thinking && (
                       <div style={{ marginBottom: 8, border: "1px solid var(--border)", background: "rgba(0,0,0,0.12)" }}>
                         <button
-                          onClick={() => setThinkingOpen((p) => ({ ...p, [m.id]: !p[m.id] }))}
+                          onClick={() => setThinkingOpen((p) => ({ ...p, [m.id]: !(thinkingOpen[m.id] ?? thinkingAutoOpen) }))}
                           style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 8px", background: "transparent", border: 0, color: "var(--muted)", cursor: "pointer", fontSize: 11 }}
                         >
                           <span>Réflexion du modèle</span>
-                          <span>{thinkingOpen[m.id] ? "−" : "+"}</span>
+                          <span>{thinkingVisible ? "−" : "+"}</span>
                         </button>
-                        {thinkingOpen[m.id] && (
+                        {thinkingVisible && (
                           <div style={{ padding: "8px", fontSize: 12, color: "var(--muted)", whiteSpace: "pre-wrap", borderTop: "1px solid var(--border)" }}>
                             {m.thinking}
                           </div>
@@ -727,22 +754,40 @@ export function ChatInterface() {
 
                   <span style={{ fontSize: 10, color: "var(--muted)" }}>{new Date(m.createdAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</span>
                 </div>
-              ))
+                )
+              })
             )}
             <div ref={endRef} />
           </div>
+          {!stickToBottom && (
+            <button
+              onClick={() => {
+                setStickToBottom(true)
+                const el = listRef.current
+                if (el) el.scrollTop = el.scrollHeight
+              }}
+              style={{ position: "absolute", bottom: 110, right: 20, width: 38, height: 38, display: "grid", placeItems: "center", borderRadius: "50%", background: "var(--panel-2)", border: "1px solid var(--cyan)", color: "var(--cyan)", cursor: "pointer", zIndex: 5, fontSize: 16 }}
+              aria-label="Aller en bas"
+            >
+              ↓
+            </button>
+          )}
 
           <div style={{ borderTop: "1px solid var(--border)", padding: 10, display: "flex", flexDirection: "column", gap: 8, background: "var(--panel)" }}>
             {pendingFiles.length > 0 && (
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {pendingFiles.map((f, idx) => (
-                  <div key={idx} style={{ position: "relative", width: 64, height: 64, border: "1px solid var(--border)", overflow: "hidden", background: "var(--panel-2)", display: "grid", placeItems: "center" }}>
+                  <div key={idx} style={{ position: "relative", width: 72, height: 72, border: "1px solid var(--border)", borderRadius: 8, overflow: "visible", background: "var(--panel-2)", display: "grid", placeItems: "center" }}>
                     {previewUrls[idx] ? (
-                      <img src={previewUrls[idx]} alt={f.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      <img src={previewUrls[idx]} alt={f.name} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 8 }} />
                     ) : (
                       <span style={{ fontSize: 10, color: "var(--muted)", padding: 4, textAlign: "center", wordBreak: "break-all" }}>{f.name.slice(0, 14)}</span>
                     )}
-                    <button onClick={() => removePending(idx)} style={{ position: "absolute", top: 2, right: 2, width: 18, height: 18, display: "grid", placeItems: "center", background: "rgba(0,0,0,0.7)", color: "#fff", border: 0, cursor: "pointer", fontSize: 11 }}>
+                    <button
+                      onClick={() => removePending(idx)}
+                      style={{ position: "absolute", top: -8, right: -8, width: 22, height: 22, display: "grid", placeItems: "center", background: "#E5484D", color: "#fff", border: "1px solid #fff", borderRadius: "50%", cursor: "pointer", fontSize: 12, lineHeight: 1, boxShadow: "0 1px 4px rgba(0,0,0,0.4)" }}
+                      aria-label={"Retirer " + f.name}
+                    >
                       ×
                     </button>
                   </div>
@@ -820,6 +865,15 @@ export function ChatInterface() {
           </div>
         </div>
       </div>
+      <ConfirmDialog
+        open={confirmDeleteId !== null}
+        title="Supprimer la conversation"
+        description="Tout l'historique de cette conversation sera définitivement effacé."
+        confirmLabel="Supprimer"
+        tone="danger"
+        onConfirm={() => confirmDeleteId && handleDeleteConversation(confirmDeleteId)}
+        onCancel={() => setConfirmDeleteId(null)}
+      />
     </div>
   )
 }

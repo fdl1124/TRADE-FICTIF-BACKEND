@@ -8,11 +8,6 @@ export type PushEnableResult =
   | { ok: true; token: string }
   | { ok: false; reason: "unsupported" | "permission" | "vapid" | "network" }
 
-/**
- * Active les notifications push : permission navigateur + token FCM
- * enregistre sur le backend. Requiert la clé VAPID
- * (NEXT_PUBLIC_FIREBASE_VAPID_KEY) et le service worker /firebase-messaging-sw.js.
- */
 export async function enablePushNotifications(): Promise<PushEnableResult> {
   try {
     if (typeof window === "undefined" || !(await isSupported()) || !("serviceWorker" in navigator)) {
