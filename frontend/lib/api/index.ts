@@ -202,14 +202,20 @@ function validateAttachments(attachments: ChatAttachmentInput[]) {
 
 export async function request<T>(path: string, init: RequestInit | undefined, parse: (value: unknown) => T): Promise<T> {
   const token = await getIdToken()
-  const response = await fetch(`${API}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...init?.headers,
-    },
-  })
+  const send = () =>
+    fetch(`${API}${path}`, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...init?.headers,
+      },
+    })
+  let response = await send()
+  if (response.status === 500) {
+    await new Promise((r) => setTimeout(r, 1200))
+    response = await send()
+  }
   const rawBody = await response.text()
   const payload: unknown = rawBody.length > 0 ? JSON.parse(rawBody) : {}
   if (!response.ok) {
