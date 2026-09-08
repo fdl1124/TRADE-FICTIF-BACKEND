@@ -50,7 +50,7 @@ export interface GeminiStreamRequest {
     | string
     | Array<
         | { type: 'text'; text: string }
-        | { type: 'inline_data'; mime_type: string; data: string }
+        | { type: 'image'; mime_type: string; data: string }
         | {
             type: 'function_result';
             name: string;
