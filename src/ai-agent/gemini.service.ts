@@ -26,6 +26,7 @@ interface StreamWireEvent {
   delta?: {
     type?: string;
     text?: string;
+    content?: { text?: string };
     arguments_json?: string;
     arguments?: string;
     json?: string;
@@ -479,8 +480,16 @@ export class GeminiService {
                 const delta = event.delta;
                 if (delta.type === 'text' && typeof delta.text === 'string') {
                   yield { kind: 'text_delta', text: delta.text };
-                } else if (delta.type === 'thought_summary' && typeof delta.text === 'string') {
-                  yield { kind: 'thought_delta', text: delta.text };
+                } else if (delta.type === 'thought_summary') {
+                  const thoughtText =
+                    typeof delta.text === 'string'
+                      ? delta.text
+                      : typeof delta.content?.text === 'string'
+                        ? delta.content.text
+                        : '';
+                  if (thoughtText) {
+                    yield { kind: 'thought_delta', text: thoughtText };
+                  }
                 } else if (delta.type === 'arguments_delta') {
                   const fragment =
                     typeof delta.arguments === 'string'
