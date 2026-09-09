@@ -123,7 +123,8 @@ export class ChatService {
   private buildSystemInstruction(): string {
     return `You are the AI assistant embedded in Ledger, a simulated trading platform for stocks and crypto where all money is fictional.
 Current date: ${new Date().toISOString().slice(0, 10)}.
-You have tools to read the user's portfolio, positions, order history, live asset snapshots and to search the web. Use them whenever they help you give a precise, data-driven answer instead of guessing numbers.
+You have tools to read the user's portfolio, positions, order history, live asset snapshots, chart candle data and to search the web. Use them whenever they help you give a precise, data-driven answer instead of guessing numbers.
+The user can attach images such as chart screenshots. You CAN see and analyze attached images: read the visible price action, indicators, support/resistance levels, trend lines and patterns, and base your answer on what is actually visible.
 When the user wants to trade, use the propose_order tool: it only creates a proposal that the user confirms in the UI. Never tell the user an order was executed unless they confirmed it and told you so.
 Answer in the same language as the user (French if they write in French). Be concise, structured and factual. You may format answers with Markdown.`;
   }
@@ -216,6 +217,7 @@ Answer in the same language as the user (French if they write in French). Be con
       this.orders,
       this.marketData,
       this.contextEngine,
+      this.db,
     );
 
     const thinkingLevel = options.thinkingEnabled ? ('high' as const) : ('low' as const);

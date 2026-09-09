@@ -99,6 +99,9 @@ const TOOL_LABELS: Record<string, string> = {
   search_assets: "Recherche d'actifs",
   get_chart_data: "Analyse du graphique",
   get_indicators: "Indicateurs techniques",
+  list_ai_decisions: "Décisions des agents",
+  get_open_orders: "Ordres en attente",
+  get_performance_stats: "Statistiques de performance",
   propose_order: "Proposition d'ordre",
   google_search: "Recherche web",
   url_context: "Analyse du lien",
@@ -773,7 +776,7 @@ export function ChatInterface() {
             </button>
           )}
 
-          <div style={{ borderTop: "1px solid var(--border)", padding: 10, display: "flex", flexDirection: "column", gap: 8, background: "var(--panel)" }}>
+          <div style={{ borderTop: "1px solid var(--border)", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8, background: "var(--panel)" }}>
             {pendingFiles.length > 0 && (
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {pendingFiles.map((f, idx) => (
@@ -798,7 +801,7 @@ export function ChatInterface() {
             <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
               <button
                 onClick={() => fileInputRef.current?.click()}
-                style={{ width: 38, height: 38, display: "grid", placeItems: "center", border: "1px solid var(--border)", background: "var(--panel-2)", cursor: "pointer", flexShrink: 0 }}
+                style={{ width: 44, height: 44, display: "grid", placeItems: "center", border: "1px solid var(--border)", borderRadius: 10, background: "var(--panel-2)", cursor: "pointer", flexShrink: 0, fontSize: 18 }}
                 aria-label="Ajouter fichiers"
               >
                 +
@@ -819,18 +822,19 @@ export function ChatInterface() {
                 rows={1}
                 style={{
                   flex: 1,
-                  minHeight: 38,
-                  maxHeight: 140,
+                  minHeight: 44,
+                  maxHeight: 150,
                   resize: "none",
                   background: "#0D141E",
                   border: "1px solid var(--border)",
-                  borderRadius: 8,
+                  borderRadius: 10,
                   color: "var(--foreground)",
-                  padding: "9px 12px",
-                  fontSize: 14,
-                  lineHeight: 1.5,
+                  padding: "11px 14px",
+                  fontSize: 16,
+                  lineHeight: 1.45,
                   outline: "none",
                   overflow: "auto",
+                  appearance: "none",
                 }}
               />
 
@@ -850,14 +854,14 @@ export function ChatInterface() {
               {chatStreaming ? (
                 <button
                   onClick={() => abortRef.current?.abort()}
-                  style={{ width: 44, height: 38, display: "grid", placeItems: "center", background: "#E5484D", color: "#fff", border: 0, cursor: "pointer", flexShrink: 0, borderRadius: 8 }}
+                  style={{ width: 44, height: 44, display: "grid", placeItems: "center", background: "#E5484D", color: "#fff", border: 0, cursor: "pointer", flexShrink: 0, borderRadius: 8 }}
                   aria-label="Arrêter la génération"
                   title="Arrêter la génération"
                 >
                   <span style={{ display: "block", width: 12, height: 12, background: "#fff" }} />
                 </button>
               ) : (
-                <button className="primary" onClick={handleSend} disabled={!input.trim() && pendingFiles.length === 0} style={{ height: 38, padding: "0 16px", borderRadius: 8 }}>
+                <button className="primary" onClick={handleSend} disabled={!input.trim() && pendingFiles.length === 0} style={{ height: 44, padding: "0 16px", borderRadius: 10 }}>
                   Envoyer
                 </button>
               )}

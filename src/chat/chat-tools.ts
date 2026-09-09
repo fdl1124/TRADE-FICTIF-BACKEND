@@ -5,6 +5,9 @@ import { MarketDataService } from '../market-data/market-data.service';
 import { ContextEngineService } from '../ai-agent/context-engine.service';
 import { ASSETS } from '../common/constants/assets';
 import { ListOrdersQueryDto } from '../common/dto/query-dtos';
+import { Inject } from '@nestjs/common';
+import { LIBSQL_CLIENT } from '../database/libsql-token';
+import type { Client } from '@libsql/client';
 
 type ChartRange = '1d' | '1w' | '1m';
 
@@ -77,6 +80,33 @@ export const PLATFORM_TOOL_DECLARATIONS: unknown[] = [
   },
   {
     type: 'function',
+    name: 'list_ai_decisions',
+    description:
+      'List the recent AI agent decisions for this account: agent name, symbol, action, confidence, validation status and short reasoning.',
+    parameters: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', description: 'Maximum number of decisions to return (default 10, max 50)' },
+      },
+      required: [],
+    },
+  },
+  {
+    type: 'function',
+    name: 'get_open_orders',
+    description:
+      'List the currently pending (not yet filled) orders of the user, with their requested price and creation time.',
+    parameters: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    type: 'function',
+    name: 'get_performance_stats',
+    description:
+      'Get the account performance summary: cash balance, positions value, total PnL, PnL percentage and daily PnL.',
+    parameters: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    type: 'function',
     name: 'propose_order',
     description:
       'Propose a trade for the user. It is NEVER executed automatically: the proposal is shown to the user who must confirm it in the UI before anything happens.',
@@ -125,6 +155,7 @@ export class PlatformToolExecutor {
     private readonly orders: OrdersService,
     private readonly marketData: MarketDataService,
     private readonly contextEngine: ContextEngineService,
+    @Inject(LIBSQL_CLIENT) private readonly db: Client,
   ) {}
 
   async execute(
@@ -253,6 +284,56 @@ export class PlatformToolExecutor {
               periodLow: low,
             },
             candles: sampled,
+          },
+        };
+      }
+      case 'list_ai_decisions': {
+        const limit = Math.min(Math.max(Number(args.limit ?? 10), 1), 50);
+        const rows = await this.db.execute({
+          sql: 'SELECT agent_name, symbol, action, confidence_score, proposed_quantity, validation_passed, reasoning_summary, created_at FROM ai_decisions WHERE account_id = ? ORDER BY created_at DESC LIMIT ?',
+          args: [this.accountId, limit],
+        });
+        return {
+          result: rows.rows.map((r) => ({
+            agent: r.agent_name,
+            symbol: r.symbol,
+            action: r.action,
+            confidence: r.confidence_score,
+            proposedQuantity: r.proposed_quantity,
+            validated: Number(r.validation_passed) === 1,
+            summary: r.reasoning_summary,
+            createdAt: r.created_at,
+          })),
+        };
+      }
+      case 'get_open_orders': {
+        const query = new ListOrdersQueryDto();
+        query.limit = 50;
+        query.status = 'pending';
+        const list = await this.orders.list(this.accountId, query);
+        return {
+          result: list.map((o) => ({
+            side: o.side,
+            symbol: o.symbol,
+            type: o.type,
+            quantity: o.quantity,
+            requestedPrice: o.requestedPrice,
+            createdAt: o.createdAt,
+          })),
+        };
+      }
+      case 'get_performance_stats': {
+        const account = await this.accounts.getAccount(this.accountId);
+        const summary = await this.accounts.getSummary(this.accountId);
+        const dailyPnl = await this.accounts.getDailyPnl(this.accountId);
+        return {
+          result: {
+            cashBalance: account.balance,
+            startingBalance: account.startingBalance,
+            positionsValue: summary.totalPositionsValue,
+            totalPnl: summary.totalPnl,
+            totalPnlPercent: summary.totalPnlPercent,
+            dailyPnl,
           },
         };
       }
